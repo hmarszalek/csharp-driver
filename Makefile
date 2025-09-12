@@ -37,7 +37,7 @@ export SIMULACRON_PATH
 export SCYLLA_VERSION
 
 .PHONY: check
-check: check-csharp
+check: check-csharp check-rust
 
 .PHONY: check-csharp
 check-csharp:
@@ -46,8 +46,12 @@ check-csharp:
 	dotnet format --verify-no-changes --severity warn --verbosity diagnostic src/Cassandra.Tests/Cassandra.Tests.csproj & \
 	wait
 
+.PHONY: check-rust
+check-rust:
+	cd rust; cargo fmt -- --check && cargo clippy --all-targets --all-features -- -D warnings
+
 .PHONY: fix
-fix: fix-csharp
+fix: fix-csharp fix-rust
 
 .PHONY: fix-csharp
 fix-csharp:
@@ -55,6 +59,10 @@ fix-csharp:
 	dotnet format --severity warn --verbosity diagnostic src/Cassandra/Cassandra.csproj & \
 	dotnet format --severity warn --verbosity diagnostic src/Cassandra.Tests/Cassandra.Tests.csproj & \
 	wait
+
+.PHONY: fix-rust
+fix-rust:
+	cd rust; cargo fmt && cargo fix && cargo clippy --all-targets --all-features --fix
 
 .PHONY: test-unit
 test-unit: .use-development-snk
@@ -166,8 +174,21 @@ publish-nuget-dry-run:
 	$(MAKE) .publish-proj-nuget PROJECT_PATH=src/Extensions/Cassandra.OpenTelemetry/Cassandra.OpenTelemetry.csproj DRY_RUN=1
 
 .PHONY: clean
-clean: clean-csharp
+clean: clean-csharp clean-rust
 
 .PHONY: clean-csharp
 clean-csharp:
 	find . -name '*.csproj' -print0 | xargs -0 -n1 dotnet clean
+
+.PHONY: clean-rust
+clean-rust:
+	cd rust; cargo clean
+
+ # TODO: Put --release for production builds
+.PHONY: build-rust
+build-rust:
+	cd rust; \
+	cargo build; \
+	cd ../examples/RustWrapper/bin/Debug/net8/; \
+	ln -f -s ../../../../../rust/target/debug/libcsharp_wrapper.so . || true
+

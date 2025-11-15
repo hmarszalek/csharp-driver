@@ -23,6 +23,16 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Solution Items", "Solution 
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Cassandra.OpenTelemetry", "Extensions\Cassandra.OpenTelemetry\Cassandra.OpenTelemetry.csproj", "{FF5E5BE8-9144-4917-A009-C4FC369084CF}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SampleSerialization", "..\examples\SampleSerialization\SampleSerialization\SampleSerialization.csproj", "{4D9613AD-0088-443D-97DB-77D6A434E8EE}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SampleSerialization", "..\examples\SampleSerialization\SampleSerialization\SampleSerialization.csproj", "{629E904F-591F-464D-ACAB-9E8E43E8C400}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "RustWrapper", "..\examples\RustWrapper\RustWrapper.csproj", "{071DAE62-A1E1-4AC2-BE88-92C414E5E0F6}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SampleSerialization", "..\examples\SampleSerialization\SampleSerialization\SampleSerialization.csproj", "{302516B4-96A2-4698-81FC-B69D831E7077}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SampleSerialization", "..\examples\SampleSerialization\SampleSerialization\SampleSerialization.csproj", "{2D74BACC-859B-4D05-8439-7E9A1D3389D8}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -49,6 +59,26 @@ Global
 		{FF5E5BE8-9144-4917-A009-C4FC369084CF}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{FF5E5BE8-9144-4917-A009-C4FC369084CF}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{FF5E5BE8-9144-4917-A009-C4FC369084CF}.Release|Any CPU.Build.0 = Release|Any CPU
+		{4D9613AD-0088-443D-97DB-77D6A434E8EE}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{4D9613AD-0088-443D-97DB-77D6A434E8EE}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{4D9613AD-0088-443D-97DB-77D6A434E8EE}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{4D9613AD-0088-443D-97DB-77D6A434E8EE}.Release|Any CPU.Build.0 = Release|Any CPU
+		{629E904F-591F-464D-ACAB-9E8E43E8C400}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{629E904F-591F-464D-ACAB-9E8E43E8C400}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{629E904F-591F-464D-ACAB-9E8E43E8C400}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{629E904F-591F-464D-ACAB-9E8E43E8C400}.Release|Any CPU.Build.0 = Release|Any CPU
+		{071DAE62-A1E1-4AC2-BE88-92C414E5E0F6}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{071DAE62-A1E1-4AC2-BE88-92C414E5E0F6}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{071DAE62-A1E1-4AC2-BE88-92C414E5E0F6}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{071DAE62-A1E1-4AC2-BE88-92C414E5E0F6}.Release|Any CPU.Build.0 = Release|Any CPU
+		{302516B4-96A2-4698-81FC-B69D831E7077}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{302516B4-96A2-4698-81FC-B69D831E7077}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{302516B4-96A2-4698-81FC-B69D831E7077}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{302516B4-96A2-4698-81FC-B69D831E7077}.Release|Any CPU.Build.0 = Release|Any CPU
+		{2D74BACC-859B-4D05-8439-7E9A1D3389D8}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{2D74BACC-859B-4D05-8439-7E9A1D3389D8}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{2D74BACC-859B-4D05-8439-7E9A1D3389D8}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{2D74BACC-859B-4D05-8439-7E9A1D3389D8}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -59,6 +89,9 @@ Global
 		{21DDE658-5BCB-4845-BC2F-47B102E3E522} = {343488BE-0304-44B0-B19C-5D6FA2B1186E}
 		{93FA7B24-7B58-42E5-89E6-7F8023B03BA3} = {33EA4AFB-736A-48FB-B6BB-0E8F1163ABF0}
 		{FF5E5BE8-9144-4917-A009-C4FC369084CF} = {33EA4AFB-736A-48FB-B6BB-0E8F1163ABF0}
+		{629E904F-591F-464D-ACAB-9E8E43E8C400} = {343488BE-0304-44B0-B19C-5D6FA2B1186E}
+		{071DAE62-A1E1-4AC2-BE88-92C414E5E0F6} = {343488BE-0304-44B0-B19C-5D6FA2B1186E}
+		{302516B4-96A2-4698-81FC-B69D831E7077} = {343488BE-0304-44B0-B19C-5D6FA2B1186E}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		SolutionGuid = {B8534DFA-1600-4E72-A2FB-AEC7DB33CD01}

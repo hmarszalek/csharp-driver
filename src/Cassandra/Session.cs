@@ -23,7 +23,10 @@ using System.Threading;
 using System.Threading.Tasks;
 
 using Cassandra.ExecutionProfiles;
+using Cassandra.Mapping.Attributes;
 using Cassandra.Metrics;
+using Cassandra.RustBridge;
+using Cassandra.RustBridge.Serialization;
 using Cassandra.Serialization;
 using Cassandra.Tasks;
 
@@ -41,16 +44,27 @@ namespace Cassandra
         }
 
         [DllImport("csharp_wrapper", CallingConvention = CallingConvention.Cdecl)]
-        unsafe private static extern void session_create(Tcb tcb, [MarshalAs(UnmanagedType.LPUTF8Str)] string uri);
+        private static extern void session_create(Tcb tcb, [MarshalAs(UnmanagedType.LPUTF8Str)] string uri);
 
         [DllImport("csharp_wrapper", CallingConvention = CallingConvention.Cdecl)]
-        unsafe private static extern void session_free(IntPtr session);
+        private static extern void session_free(IntPtr session);
 
         [DllImport("csharp_wrapper", CallingConvention = CallingConvention.Cdecl)]
-        unsafe private static extern void session_query(Tcb tcb, IntPtr session, [MarshalAs(UnmanagedType.LPUTF8Str)] string statement);
-
+        private static extern void session_query(Tcb tcb, IntPtr session, [MarshalAs(UnmanagedType.LPUTF8Str)] string statement);
+        
         [DllImport("csharp_wrapper", CallingConvention = CallingConvention.Cdecl)]
-        unsafe private static extern void session_prepare(Tcb tcb, IntPtr session, [MarshalAs(UnmanagedType.LPUTF8Str)] string statement);
+        private static extern void session_prepare(Tcb tcb, IntPtr session, [MarshalAs(UnmanagedType.LPUTF8Str)] string statement);
+
+        /// <summary>
+        /// Executes a query with already-serialized values.
+        /// 
+        /// Note: This method transfers ownership of valuesPtr to native code, thus invalidating the SerializedValues instance after use.
+        /// Values, once passed to this method, should not be used again in managed code, it's the Rust side's responsibility to handle retries
+        /// and to free the memory.
+        /// </summary>
+        
+        [DllImport("csharp_wrapper", CallingConvention = CallingConvention.Cdecl)]
+        private static extern void session_query_with_values(Tcb tcb, IntPtr session, [MarshalAs(UnmanagedType.LPUTF8Str)] string statement, IntPtr valuesPtr);
 
         private static readonly Logger Logger = new Logger(typeof(Session));
         private readonly ICluster _cluster;
@@ -298,11 +312,22 @@ namespace Cassandra
                     Tcb tcb = Tcb.WithTcs(tcs);
 
                     // TODO: support queries with values
-                    if (queryValues.Length > 0)
+                    if (queryValues == null || queryValues.Length == 0)
                     {
-                        throw new NotImplementedException("Regular statements with values are not yet supported");
+                        session_query(tcb, handle, queryString);
                     }
-                    session_query(tcb, handle, queryString);
+                    else
+                    {
+                        //TODO: abstract value serialization and the Rust-native function out of here
+                        
+                        session_query_with_values(
+                            tcb, 
+                            handle, 
+                            queryString, 
+                            SerializationHandler.InitializeSerializedValues(queryValues).UseNativeHandle()
+                            );
+                    }
+                    
 
                     return tcs.Task.ContinueWith(t =>
                     {
@@ -331,7 +356,7 @@ namespace Cassandra
                     // break;
             }
 
-            throw new NotImplementedException("ExecuteAsync is not yet implemented"); // FIXME: bridge with Rust execution profiles.
+            // throw new NotImplementedException("ExecuteAsync is not yet implemented"); // FIXME: bridge with Rust execution profiles.
         }
         public IDriverMetrics GetMetrics()
         {

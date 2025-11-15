@@ -1,0 +1,38 @@
+# Ignore everything in this folder (no files from examples/SampleSerialization will be pushed)
+# Keep this .gitignore tracked so the rule is enforced
+*
+!.gitignore
+
+# If you ever want to allow specific files, add exceptions, e.g.:
+# !allowed-file.txt
+
+# Common build/runtime artefacts (redundant when using '*' above, but explicit for readability)
+/bin/
+/obj/
+/*.dll
+/*.pdb
+/*.so
+/*.dylib
+/*.exe
+/*.log
+/*.runtimeconfig.json
+
+# Docker artifacts
+docker-compose.yml
+create-scylla-network.sh
+
+# IDE files
+.vscode/
+*.user
+*.suo
+
+# Node/npm/yarn
+node_modules/
+
+# Rust build artifacts
+/target/
+
+# OS files
+.DS_Store
+Thumbs.db
+

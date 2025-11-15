@@ -11,8 +11,45 @@ using System.Threading.Tasks;
  * to translate between int and Int32.
  */
 
-namespace Cassandra
+namespace Cassandra.RustBridge
 {
+    [StructLayout(LayoutKind.Sequential)]
+    internal struct FfiError
+    {
+        public int Code;
+        public IntPtr Message;
+    }
+
+    internal static class FfiErrorHelpers
+    {
+        private const string LibraryName = "csharp_wrapper";
+
+        [DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
+        private static extern void ffi_error_free_message(IntPtr msg);
+
+        internal static void ExecuteAndThrowIfFails(Func<FfiError> operation)
+        {
+            var err = operation();
+            ThrowIfError(err);
+        }
+        private static void ThrowIfError(FfiError error)
+        {
+            if (error.Code == 0)
+            {
+                return;
+            }
+
+            string message = "Unknown error";
+            if (error.Message != IntPtr.Zero)
+            {
+                message = Marshal.PtrToStringUTF8(error.Message) ?? "Unknown error";
+                ffi_error_free_message(error.Message);
+            }
+
+            throw new InvalidOperationException($"Rust call failed with code {error.Code}: {message}");
+        }
+    }
+
     /// <summary>
     /// Task Control Block groups entities crucial for controlling Task execution
     /// from Rust code. It's intended to:
@@ -168,6 +205,24 @@ namespace Cassandra
             catch (Exception ex)
             {
                 Console.Error.WriteLine($"[FFI] FailTask threw exception: {ex}");
+            }
+        }
+
+        /// <summary>
+        /// Callback for Rust to indicate that a pinned managed buffer (represented by a GCHandle
+        /// cookie) is no longer needed and can be unpinned.
+        /// </summary>
+        /// <param name="cookiePtr">Pointer obtained from GCHandle.ToIntPtr when the buffer was pinned.</param>
+        [UnmanagedCallersOnly(CallConvs = new Type[] { typeof(CallConvCdecl) })]
+        internal static void UnpinSerializedBuffer(IntPtr cookiePtr)
+        {
+            try
+            {
+                GCHandle.FromIntPtr(cookiePtr).Free();
+            }
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine($"[FFI] UnpinSerializedBuffer threw exception: {ex}");
             }
         }
     }

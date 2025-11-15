@@ -3,7 +3,11 @@ use scylla::client::session_builder::SessionBuilder;
 use scylla::errors::{NewSessionError, PagerExecutionError, PrepareError};
 
 use crate::CSharpStr;
-use crate::ffi::{ArcFFI, BridgedBorrowedSharedPtr, BridgedOwnedSharedPtr, FFI, FromArc};
+use crate::ffi::{
+    ArcFFI, BoxFFI, BridgedBorrowedSharedPtr, BridgedOwnedExclusivePtr, BridgedOwnedSharedPtr, FFI,
+    FromArc,
+};
+use crate::pre_serialized_values::PreSerializedValues;
 use crate::prepared_statement::BridgedPreparedStatement;
 use crate::row_set::RowSet;
 use crate::task::{BridgedFuture, Tcb};
@@ -87,5 +91,37 @@ pub extern "C" fn session_query(
         Ok(RowSet {
             pager: std::sync::Mutex::new(query_pager),
         })
-    })
+    });
+}
+
+// I duplicated the code since it's meant to be refactored anyway
+#[unsafe(no_mangle)]
+pub extern "C" fn session_query_with_values(
+    tcb: Tcb,
+    session_ptr: BridgedBorrowedSharedPtr<'_, BridgedSession>,
+    statement: CSharpStr<'_>,
+    values_ptr: BridgedOwnedExclusivePtr<PreSerializedValues>,
+) {
+    // Convert the raw C string to a Rust string.
+    let statement = statement.as_cstr().unwrap().to_str().unwrap().to_owned();
+    let bridged_session = ArcFFI::cloned_from_ptr(session_ptr).unwrap();
+
+    // Take ownership of the pre-serialized values box so we can move it into the async task.
+    let values_box = BoxFFI::from_ptr(values_ptr).expect("non-null PreSerializedValues pointer");
+
+    BridgedFuture::spawn::<_, _, PagerExecutionError>(tcb, async move {
+        println!("Executing statement with values \"{}\"", statement);
+        // Pass a reference to the PreSerializedValues implementing SerializeRow.
+
+        //TODO: query_iter is discouraged for the use with parameters, investigate this
+        let query_pager = bridged_session
+            .inner
+            .query_iter(statement, &*values_box)
+            .await?;
+        println!("Statement executed");
+
+        Ok(RowSet {
+            pager: std::sync::Mutex::new(query_pager),
+        })
+    });
 }

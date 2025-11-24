@@ -44,11 +44,17 @@ jobs:
         with:
           dotnet-version: '9.0.x'
 
-      - name: Run dotnet format (checks formatting)
+      - name: Run static checks (checks formatting, linting and performs code analysis)
         run: make check
 
       - name: Copy development signing key
         run: "cp -f build/scylladb-dev.snk build/scylladb.snk"
+
+      - name: Build Rust lib
+        run: make build-rust
+
+      - name: Symlink Rust lib
+        run: make create-rust-lib-symlinks
 
       - name: Build the project
         run: dotnet build src/Cassandra/Cassandra.csproj
@@ -125,6 +131,12 @@ jobs:
             echo "Unknown scylla version name `${{ matrix.scylla-version }}`"
             exit 1
           fi
+
+      - name: Build Rust lib
+        run: make build-rust
+
+      - name: Symlink Rust lib
+        run: make create-rust-lib-symlinks
 
       - name: Run unit tests
         run: make test-unit

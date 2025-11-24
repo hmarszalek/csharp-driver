@@ -18,6 +18,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Net;
+using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -29,8 +30,28 @@ using Cassandra.Tasks;
 namespace Cassandra
 {
     /// <inheritdoc cref="ISession" />
-    public class Session : ISession
+    public class Session : SafeHandle, ISession
     {
+        public override bool IsInvalid => handle == IntPtr.Zero;
+
+        protected override bool ReleaseHandle()
+        {
+            session_free(handle);
+            return true;
+        }
+
+        [DllImport("csharp_wrapper", CallingConvention = CallingConvention.Cdecl)]
+        unsafe private static extern void session_create(Tcb tcb, [MarshalAs(UnmanagedType.LPUTF8Str)] string uri);
+
+        [DllImport("csharp_wrapper", CallingConvention = CallingConvention.Cdecl)]
+        unsafe private static extern void session_free(IntPtr session);
+
+        [DllImport("csharp_wrapper", CallingConvention = CallingConvention.Cdecl)]
+        unsafe private static extern void session_query(Tcb tcb, IntPtr session, [MarshalAs(UnmanagedType.LPUTF8Str)] string statement);
+
+        [DllImport("csharp_wrapper", CallingConvention = CallingConvention.Cdecl)]
+        unsafe private static extern void session_prepare(Tcb tcb, IntPtr session, [MarshalAs(UnmanagedType.LPUTF8Str)] string statement);
+
         private static readonly Logger Logger = new Logger(typeof(Session));
         private readonly ICluster _cluster;
         private int _disposed;
@@ -67,16 +88,47 @@ namespace Cassandra
 
         public Policies Policies => Configuration.Policies;
 
-        internal Session(
+        private Session(
             ICluster cluster,
-            Configuration configuration,
-            string keyspace)
+            string keyspace,
+            IntPtr sessionPtr)
+        : base(IntPtr.Zero, true)
         {
             _cluster = cluster;
-            Configuration = configuration;
+            Configuration = cluster.Configuration;
             Keyspace = keyspace;
-            // FIXME:
-            // _metricsManager = new MetricsManager(configuration.MetricsProvider, Configuration.MetricsOptions, Configuration.MetricsEnabled, SessionName);
+            handle = sessionPtr;
+        }
+
+        static internal Task<ISession> CreateAsync(
+            ICluster cluster,
+            string contactPointUris,
+            string keyspace)
+        {
+            /*
+             * TaskCompletionSource is a way to programatically control a Task.
+             * We create one here and pass it to Rust code, which will complete it.
+             * This is a common pattern to bridge async code between C# and native code.
+             */
+            TaskCompletionSource<IntPtr> tcs = new(TaskCreationOptions.RunContinuationsAsynchronously);
+            Tcb tcb = Tcb.WithTcs(tcs);
+
+            // Invoke the native code, which will complete the TCS when done.
+            // We need to pass a pointer to CompleteTask because Rust code cannot directly
+            // call C# methods.
+            // Even though Rust code statically knows the name of the method, it cannot
+            // directly call it because the .NET runtime does not expose the method
+            // in a way that Rust can call it.
+            // So we pass a pointer to the method and Rust code will call it via that pointer.
+            // This is a common pattern to call C# code from native code ("reversed P/Invoke").
+            session_create(tcb, contactPointUris);
+
+            return tcs.Task.ContinueWith(t =>
+            {
+                IntPtr sessionPtr = t.Result;
+                var session = new Session(cluster, keyspace, sessionPtr);
+                return (ISession)session;
+            }, TaskContinuationOptions.ExecuteSynchronously);
         }
 
         /// <inheritdoc />
@@ -152,12 +204,6 @@ namespace Cassandra
             {
                 Session.Logger.Info(string.Format("Cannot DELETE keyspace:  {0}  because it not exists.", keyspaceName));
             }
-        }
-
-        /// <inheritdoc />
-        public void Dispose()
-        {
-            ShutdownAsync().GetAwaiter().GetResult();
         }
 
         /// <inheritdoc />
@@ -241,6 +287,50 @@ namespace Cassandra
         public Task<RowSet> ExecuteAsync(IStatement statement, string executionProfileName)
         {
             // return this.ExecuteAsync(statement, this.GetRequestOptions(executionProfileName));
+
+            switch (statement)
+            {
+                case RegularStatement s:
+                    string queryString = s.QueryString;
+                    object[] queryValues = s.QueryValues ?? [];
+
+                    TaskCompletionSource<IntPtr> tcs = new(TaskCreationOptions.RunContinuationsAsynchronously);
+                    Tcb tcb = Tcb.WithTcs(tcs);
+
+                    // TODO: support queries with values
+                    if (queryValues.Length > 0)
+                    {
+                        throw new NotImplementedException("Regular statements with values are not yet supported");
+                    }
+                    session_query(tcb, handle, queryString);
+
+                    return tcs.Task.ContinueWith(t =>
+                    {
+                        IntPtr rowSetPtr = t.Result;
+                        var rowSet = new RowSet(rowSetPtr);
+                        return rowSet;
+                    }, TaskContinuationOptions.ExecuteSynchronously);
+
+                case BoundStatement bs:
+                    if (bs.QueryValues.Length == 0)
+                    {
+                        throw new NotImplementedException("Bound statements without values are not yet supported");
+                    }
+                    else
+                    {
+                        throw new NotImplementedException("Bound statements with values are not yet supported");
+                    }
+                // break;
+
+                case BatchStatement s:
+                    throw new NotImplementedException("Batches are not yet supported");
+                // break;
+
+                default:
+                    throw new ArgumentException("Unsupported statement type");
+                    // break;
+            }
+
             throw new NotImplementedException("ExecuteAsync is not yet implemented"); // FIXME: bridge with Rust execution profiles.
         }
         public IDriverMetrics GetMetrics()
@@ -299,15 +389,30 @@ namespace Cassandra
         public Task<PreparedStatement> PrepareAsync(
             string cqlQuery, string keyspace, IDictionary<string, byte[]> customPayload)
         {
-            // TODO: support custom payload in Rust Driver, then implement this.
+            if (customPayload != null)
+            {
+                throw new NotSupportedException("Custom payload is not yet supported in Prepare");
+            }
+
             if (keyspace != null)
             {
-                // Validate protocol version here and not at PrepareRequest level, as PrepareRequest can be issued
-                // in the background (prepare and retry, prepare on up, ...)
                 throw new NotSupportedException($"Protocol version 4 does not support" +
                                                 " setting the keyspace as part of the PREPARE request");
             }
-            throw new NotImplementedException("PrepareAsync is not yet implemented"); // FIXME: bridge with Rust prepare.
+
+            TaskCompletionSource<IntPtr> tcs = new(TaskCreationOptions.RunContinuationsAsynchronously);
+            Tcb tcb = Tcb.WithTcs(tcs);
+
+            session_prepare(tcb, handle, cqlQuery);
+
+            return tcs.Task.ContinueWith(t =>
+            {
+                IntPtr preparedStatementPtr = t.Result;
+                // FIXME: Bridge with Rust to get variables metadata.
+                RowSetMetadata variablesRowsMetadata = null;
+                var ps = new PreparedStatement(preparedStatementPtr, cqlQuery, variablesRowsMetadata);
+                return ps;
+            }, TaskContinuationOptions.ExecuteSynchronously);
         }
 
         public void WaitForSchemaAgreement(RowSet rs)

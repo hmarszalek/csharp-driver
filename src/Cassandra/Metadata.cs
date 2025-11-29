@@ -61,7 +61,8 @@ namespace Cassandra
 
         public void Dispose()
         {
-            throw new NotImplementedException();
+            // No-op for now - metadata shutdown not yet implemented
+            // throw new NotImplementedException();
         }
         public Host GetHost(IPEndPoint address)
         {
@@ -205,7 +206,8 @@ namespace Cassandra
 
         public void ShutDown(int timeoutMs = Timeout.Infinite)
         {
-            throw new NotImplementedException();
+            // No-op for now - metadata shutdown not yet implemented
+            // throw new NotImplementedException();
         }
 
         public Task Init()

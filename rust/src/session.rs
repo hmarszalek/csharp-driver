@@ -89,3 +89,66 @@ pub extern "C" fn session_query(
         })
     })
 }
+
+#[unsafe(no_mangle)]
+pub extern "C" fn session_use_keyspace(
+    tcb: Tcb,
+    session_ptr: BridgedBorrowedSharedPtr<'_, BridgedSession>,
+    keyspace: CSharpStr<'_>,
+    case_sensitive: i32,
+) {
+    let keyspace = keyspace.as_cstr().unwrap().to_str().unwrap().to_owned();
+    let bridged_session = ArcFFI::cloned_from_ptr(session_ptr).unwrap();
+    let case_sensitive = case_sensitive != 0;
+
+    tracing::trace!(
+        "[FFI] Scheduling use_keyspace: \"{}\" (case_sensitive: {})",
+        keyspace,
+        case_sensitive
+    );
+    BridgedFuture::spawn::<_, _, PagerExecutionError>(tcb, async move {
+        tracing::debug!("[FFI] Executing use_keyspace \"{}\"", keyspace);
+
+        // Use Session::use_keyspace() to update the Rust session's internal keyspace state.
+        bridged_session
+            .inner
+            .use_keyspace(&keyspace, case_sensitive)
+            .await
+            .map_err(|e| {
+                // Error type conversion: UseKeyspaceError -> PagerExecutionError
+                // We need this because BridgedFuture expects PagerExecutionError to match RowSet return.
+                match e {
+                    scylla::errors::UseKeyspaceError::RequestError(req_err) => {
+                        // Common case: request failure (e.g., keyspace doesn't exist)
+                        let req_error: scylla::errors::RequestError = req_err.into();
+                        PagerExecutionError::NextPageError(req_error.into())
+                    }
+                    other_err => {
+                        // Edge cases: BadKeyspaceName or KeyspaceNameMismatch
+                        // Wrap in DbError::Invalid to preserve the error message
+                        let req_err = scylla::errors::RequestAttemptError::DbError(
+                            scylla::errors::DbError::Invalid,
+                            other_err.to_string(),
+                        );
+                        let req_error: scylla::errors::RequestError = req_err.into();
+                        PagerExecutionError::NextPageError(req_error.into())
+                    }
+                }
+            })?;
+
+        tracing::trace!("[FFI] use_keyspace executed successfully");
+
+        // Return an empty RowSet - query system.local with impossible condition
+        let pager = bridged_session
+            .inner
+            .query_iter(
+                "SELECT * FROM system.local WHERE key = 'impossiblekeyvalue'",
+                (),
+            )
+            .await?;
+
+        Ok(RowSet {
+            pager: std::sync::Mutex::new(pager),
+        })
+    })
+}

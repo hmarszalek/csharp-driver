@@ -50,6 +50,9 @@ namespace Cassandra
         unsafe private static extern void session_query(Tcb tcb, IntPtr session, [MarshalAs(UnmanagedType.LPUTF8Str)] string statement);
 
         [DllImport("csharp_wrapper", CallingConvention = CallingConvention.Cdecl)]
+        unsafe private static extern void session_use_keyspace(Tcb tcb, IntPtr session, [MarshalAs(UnmanagedType.LPUTF8Str)] string keyspace, int caseSensitive);
+
+        [DllImport("csharp_wrapper", CallingConvention = CallingConvention.Cdecl)]
         unsafe private static extern void session_prepare(Tcb tcb, IntPtr session, [MarshalAs(UnmanagedType.LPUTF8Str)] string statement);
 
         private static readonly Logger Logger = new Logger(typeof(Session));
@@ -127,6 +130,16 @@ namespace Cassandra
             {
                 IntPtr sessionPtr = t.Result;
                 var session = new Session(cluster, keyspace, sessionPtr);
+
+                // If a keyspace was specified, validate it exists by executing USE statement
+                // This will throw InvalidQueryException if keyspace doesn't exist
+                if (!string.IsNullOrEmpty(keyspace))
+                {
+                    // Execute USE directly without checking if keyspace changed
+                    // to validate that the keyspace exists
+                    session.Execute(new SimpleStatement(CqlQueryTools.GetUseKeyspaceCql(keyspace)));
+                }
+
                 return (ISession)session;
             }, TaskContinuationOptions.ExecuteSynchronously);
         }
@@ -157,7 +170,6 @@ namespace Cassandra
                 // FIXME: Migrate to Rust `Session::use_keyspace()`.
 
                 Execute(new SimpleStatement(CqlQueryTools.GetUseKeyspaceCql(keyspace)));
-                Keyspace = keyspace;
             }
         }
 
@@ -294,6 +306,9 @@ namespace Cassandra
                     string queryString = s.QueryString;
                     object[] queryValues = s.QueryValues ?? [];
 
+                    // Check if this is a USE statement to track keyspace changes
+                    bool isUseStatement = IsUseKeyspace(queryString, out string newKeyspace);
+
                     TaskCompletionSource<IntPtr> tcs = new(TaskCreationOptions.RunContinuationsAsynchronously);
                     Tcb tcb = Tcb.WithTcs(tcs);
 
@@ -302,12 +317,30 @@ namespace Cassandra
                     {
                         throw new NotImplementedException("Regular statements with values are not yet supported");
                     }
-                    session_query(tcb, handle, queryString);
+
+                    // Use session_use_keyspace for USE statements and session_query for other statements
+                    if (isUseStatement)
+                    {
+                        // For USE statements, call the dedicated use_keyspace method
+                        // case_sensitive = 1 (true) to respect the exact casing provided
+                        session_use_keyspace(tcb, handle, newKeyspace, 1);
+                    }
+                    else
+                    {
+                        session_query(tcb, handle, queryString);
+                    }
 
                     return tcs.Task.ContinueWith(t =>
                     {
                         IntPtr rowSetPtr = t.Result;
                         var rowSet = new RowSet(rowSetPtr);
+
+                        // Update keyspace tracking after successful execution
+                        if (isUseStatement)
+                        {
+                            _keyspace = newKeyspace;
+                        }
+
                         return rowSet;
                     }, TaskContinuationOptions.ExecuteSynchronously);
 
@@ -440,6 +473,42 @@ namespace Cassandra
             }
 
             return profile;
+        }
+
+        // Checks if a query is a USE statement and extracts the keyspace name.
+        // Returns true if the query is a USE statement, false otherwise
+        private bool IsUseKeyspace(string query, out string keyspace)
+        {
+            keyspace = null;
+
+            if (string.IsNullOrWhiteSpace(query))
+                return false;
+
+            var trimmed = query.Trim();
+
+            // Check if it starts with USE (case-insensitive)
+            if (!trimmed.StartsWith("USE ", StringComparison.OrdinalIgnoreCase))
+                return false;
+
+            // Extract the keyspace name
+            var parts = trimmed.Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
+            if (parts.Length != 2)
+                return false;
+
+            var ksName = parts[1].TrimEnd(';');
+
+            // Remove quotes if present
+            if (ksName.StartsWith("\"") && ksName.EndsWith("\""))
+            {
+                keyspace = ksName.Substring(1, ksName.Length - 2).Replace("\"\"", "\"");
+            }
+            else
+            {
+                // Unquoted identifiers are lowercase in CQL
+                keyspace = ksName.ToLower();
+            }
+
+            return true;
         }
     }
 }

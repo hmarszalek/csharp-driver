@@ -16,13 +16,13 @@ namespace Cassandra.RustBridge.Serialization
         protected IntPtr NativeHandle;
 
         [DllImport("csharp_wrapper", CallingConvention = CallingConvention.Cdecl)]
-        private static extern IntPtr pre_serialized_values_new();
+        unsafe private static extern IntPtr pre_serialized_values_new();
 
         [DllImport("csharp_wrapper", CallingConvention = CallingConvention.Cdecl)]
-        protected static extern IntPtr pre_serialized_values_borrowed_new();
+        unsafe protected static extern IntPtr pre_serialized_values_borrowed_new();
 
         [DllImport("csharp_wrapper", CallingConvention = CallingConvention.Cdecl)]
-        private static extern FfiError pre_serialized_values_add_value(
+        unsafe private static extern FfiError pre_serialized_values_add_value(
             IntPtr builderPtr,
             IntPtr valuePtr,
             UIntPtr valueLen,
@@ -30,10 +30,10 @@ namespace Cassandra.RustBridge.Serialization
             IntPtr unpinCallbackPtr);
 
         [DllImport("csharp_wrapper", CallingConvention = CallingConvention.Cdecl)]
-        private static extern FfiError pre_serialized_values_add_null(IntPtr builderPtr);
+        unsafe private static extern FfiError pre_serialized_values_add_null(IntPtr builderPtr);
 
         [DllImport("csharp_wrapper", CallingConvention = CallingConvention.Cdecl)]
-        private static extern FfiError pre_serialized_values_add_unset(IntPtr builderPtr);
+        unsafe private static extern FfiError pre_serialized_values_add_unset(IntPtr builderPtr);
 
         protected static IntPtr PreSerializedValuesNew() => pre_serialized_values_new();
 

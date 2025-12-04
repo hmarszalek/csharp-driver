@@ -70,7 +70,7 @@ namespace Cassandra
         unsafe private static extern ulong row_set_get_columns_count(IntPtr rowSetPtr);
 
         [DllImport("csharp_wrapper", CallingConvention = CallingConvention.Cdecl)]
-        unsafe private static extern int row_set_fill_columns_metadata(IntPtr rowSetPtr, IntPtr columnsPtr, IntPtr metadataSetter);
+        unsafe private static extern void row_set_fill_columns_metadata(IntPtr rowSetPtr, IntPtr columnsPtr, IntPtr metadataSetter);
 
         [DllImport("csharp_wrapper", CallingConvention = CallingConvention.Cdecl)]
         unsafe private static extern ulong row_set_type_info_get_code(IntPtr typeInfoHandle);
@@ -294,8 +294,7 @@ namespace Cassandra
             unsafe
             {
                 void* columnsPtr = Unsafe.AsPointer(ref columns);
-                int res = row_set_fill_columns_metadata(rowSetPtr, (IntPtr)columnsPtr, (IntPtr)setColumnMetaPtr);
-                // FIXME: Do something with `res`.
+                row_set_fill_columns_metadata(rowSetPtr, (IntPtr)columnsPtr, (IntPtr)setColumnMetaPtr);
             }
 
             // This was recommended by ChatGPT in the general case to ensure the raw pointer is still valid.

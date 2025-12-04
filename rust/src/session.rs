@@ -91,7 +91,7 @@ pub extern "C" fn session_query(
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn session_execute_bound(
+pub extern "C" fn session_query_bound(
     tcb: Tcb,
     session_ptr: BridgedBorrowedSharedPtr<'_, BridgedSession>,
     prepared_statement_ptr: BridgedBorrowedSharedPtr<'_, BridgedPreparedStatement>,
@@ -149,14 +149,13 @@ pub extern "C" fn session_use_keyspace(
                         let req_error: scylla::errors::RequestError = req_err.into();
                         PagerExecutionError::NextPageError(req_error.into())
                     }
-                    other_err => {
-                        // Edge cases: BadKeyspaceName or KeyspaceNameMismatch
-                        // Wrap in DbError::Invalid to preserve the error message
-                        let req_err = scylla::errors::RequestAttemptError::DbError(
-                            scylla::errors::DbError::Invalid,
-                            other_err.to_string(),
-                        );
-                        let req_error: scylla::errors::RequestError = req_err.into();
+                    _ => {
+                        // Map to an UnexpectedResponse attempt error.
+                        let req_attempt_err =
+                            scylla::errors::RequestAttemptError::UnexpectedResponse(
+                                scylla::errors::CqlResponseKind::Error,
+                            );
+                        let req_error: scylla::errors::RequestError = req_attempt_err.into();
                         PagerExecutionError::NextPageError(req_error.into())
                     }
                 }

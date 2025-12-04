@@ -56,7 +56,7 @@ namespace Cassandra
         unsafe private static extern void session_prepare(Tcb tcb, IntPtr session, [MarshalAs(UnmanagedType.LPUTF8Str)] string statement);
 
         [DllImport("csharp_wrapper", CallingConvention = CallingConvention.Cdecl)]
-        unsafe private static extern void session_execute_bound(Tcb tcb, IntPtr session, IntPtr preparedStatement);
+        unsafe private static extern void session_query_bound(Tcb tcb, IntPtr session, IntPtr preparedStatement);
 
         private static readonly Logger Logger = new Logger(typeof(Session));
         private readonly ICluster _cluster;
@@ -375,7 +375,7 @@ namespace Cassandra
                         throw new InvalidOperationException("The bound statement's prepared statement is invalid.");
                     }
 
-                    session_execute_bound(boundTcb, handle, bs.PreparedStatement.DangerousGetHandle());
+                    session_query_bound(boundTcb, handle, bs.PreparedStatement.DangerousGetHandle());
 
                     return boundTcs.Task.ContinueWith(t =>
                     {

@@ -109,8 +109,12 @@ pub extern "C" fn session_query_with_values(
     // Take ownership of the pre-serialized values box so we can move it into the async task.
     let values_box = BoxFFI::from_ptr(values_ptr).expect("non-null PreSerializedValues pointer");
 
+    tracing::trace!(
+        "[FFI] Scheduling statement with values for execution: \"{}\"",
+        statement
+    );
     BridgedFuture::spawn::<_, _, PagerExecutionError>(tcb, async move {
-        println!("Executing statement with values \"{}\"", statement);
+        tracing::debug!("[FFI] Executing statement with values \"{}\"", statement);
         // Pass a reference to the PreSerializedValues implementing SerializeRow.
 
         //TODO: query_iter is discouraged for the use with parameters, investigate this
@@ -118,7 +122,7 @@ pub extern "C" fn session_query_with_values(
             .inner
             .query_iter(statement, &*values_box)
             .await?;
-        println!("Statement executed");
+        tracing::trace!("[FFI] Statement with values executed");
 
         Ok(RowSet {
             pager: std::sync::Mutex::new(Some(query_pager)),

@@ -386,7 +386,7 @@ namespace Cassandra
                 unsafe
                 {
                     bool has_row = row_set_next_row(handle, (IntPtr)deserializeValue, columnsPtr, valuesPtr, serializerPtr) != 0;
-                    Console.Error.WriteLine($"[FFI] row_set_next_row returned {has_row}");
+                    // Console.Error.WriteLine($"[FFI] row_set_next_row returned {has_row}");
                     if (!has_row)
                     {
                         _exhausted = true;
@@ -445,7 +445,7 @@ namespace Cassandra
                     Marshal.Copy(frameSlicePtr, frameSlice, 0, (int)length);
                     values[valueIndex] = serializer.Deserialize(ProtocolVersion.V4, frameSlice, 0, (int)length, column.TypeCode, column.TypeInfo);
 
-                    Console.Error.WriteLine($"[FFI] DeserializeValue [{valueIndex}] done.");
+                    // Console.Error.WriteLine($"[FFI] DeserializeValue [{valueIndex}] done.");
                 }
                 else
                 {

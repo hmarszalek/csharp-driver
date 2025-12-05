@@ -1,3 +1,4 @@
+use crate::FfiError;
 use crate::FfiPtr;
 use crate::ffi::{BoxFFI, BridgedBorrowedExclusivePtr, BridgedOwnedExclusivePtr};
 use crate::ffi::{FFI, FromBox};
@@ -10,7 +11,6 @@ use scylla::serialize::row::{
 };
 use scylla::serialize::row::{RowSerializationContext, SerializeRow};
 use scylla::serialize::writers::{CellWriter, RowWriter};
-use crate::FfiError;
 
 #[derive(Clone, Copy)]
 pub enum CsharpValue {}
@@ -232,7 +232,10 @@ pub unsafe extern "C" fn pre_serialized_values_add_value(
         FfiError::ok()
     } else {
         // Invalid pointer from C# side
-        FfiError::new(1, "invalid PreSerializedValues pointer in pre_serialized_values_add_value")
+        FfiError::new(
+            1,
+            "invalid PreSerializedValues pointer in pre_serialized_values_add_value",
+        )
     }
 }
 
@@ -244,7 +247,10 @@ pub extern "C" fn pre_serialized_values_add_null(
         builder.add_null();
         FfiError::ok()
     } else {
-        FfiError::new(1, "invalid PreSerializedValues pointer in pre_serialized_values_add_null")
+        FfiError::new(
+            1,
+            "invalid PreSerializedValues pointer in pre_serialized_values_add_null",
+        )
     }
 }
 
@@ -256,6 +262,9 @@ pub extern "C" fn pre_serialized_values_add_unset(
         builder.add_unset();
         FfiError::ok()
     } else {
-        FfiError::new(1, "invalid PreSerializedValues pointer in pre_serialized_values_add_unset")
+        FfiError::new(
+            1,
+            "invalid PreSerializedValues pointer in pre_serialized_values_add_unset",
+        )
     }
 }

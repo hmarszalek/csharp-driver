@@ -204,7 +204,13 @@ namespace Cassandra
         /// <inheritdoc />
         public void CreateKeyspace(string keyspace, Dictionary<string, string> replication = null, bool durableWrites = true)
         {
-            WaitForSchemaAgreement(Execute(CqlQueryTools.GetCreateKeyspaceCql(keyspace, replication, durableWrites, false)));
+            // Removed WaitForSchemaAgreement call as schema agreement is not implemented yet in Rust driver.
+            // Instead added brief delay to allow schema propagation before subsequent operations
+            
+            // WaitForSchemaAgreement(Execute(CqlQueryTools.GetCreateKeyspaceCql(keyspace, replication, durableWrites, false)));
+            Execute(CqlQueryTools.GetCreateKeyspaceCql(keyspace, replication, durableWrites, false));
+            Thread.Sleep(1000); 
+            
             Session.Logger.Info("Keyspace [" + keyspace + "] has been successfully CREATED.");
         }
 
@@ -396,18 +402,21 @@ namespace Cassandra
                         throw new InvalidOperationException("The bound statement's prepared statement is invalid.");
                     }
 
+                    IntPtr queryPrepared = bs.PreparedStatement.DangerousGetHandle();
+                    object[] queryValuesBound = bs.QueryValues ?? [];
+
                     // Execute with or without values
-                    if (bs.QueryValues == null || bs.QueryValues.Length == 0)
+                    if (queryValuesBound == null || queryValuesBound.Length == 0)
                     {
-                        session_query_bound(boundTcb, handle, bs.PreparedStatement.DangerousGetHandle());
+                        session_query_bound(boundTcb, handle, queryPrepared);
                     }
                     else
                     {
                         session_query_bound_with_values(
                             boundTcb,
                             handle,
-                            bs.PreparedStatement.DangerousGetHandle(),
-                            SerializationHandler.InitializeSerializedValues(bs.QueryValues).UseNativeHandle()
+                            queryPrepared,
+                            SerializationHandler.InitializeSerializedValues(queryValuesBound).UseNativeHandle()
                         );
                     }
 

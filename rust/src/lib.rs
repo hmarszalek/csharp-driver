@@ -45,7 +45,8 @@ impl FfiError {
 
     pub fn new(code: i32, msg: &str) -> Self {
         // Allocate a CString so C# can read and later free it.
-        let cstring = CString::new(msg).unwrap_or_else(|_| CString::new("invalid utf8 in error").unwrap());
+        let cstring =
+            CString::new(msg).unwrap_or_else(|_| CString::new("invalid utf8 in error").unwrap());
         let ptr = cstring.into_raw();
         FfiError { code, message: ptr }
     }

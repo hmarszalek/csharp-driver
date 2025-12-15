@@ -70,7 +70,7 @@ type SetMetadata = unsafe extern "C" fn(
     table_len: usize,
     type_code: usize,
     type_info_handle: BridgedBorrowedSharedPtr<'_, ColumnType<'_>>,
-    is_frozen: i32,
+    is_frozen: usize,
 );
 
 /// Calls back into C# for each column to provide metadata.
@@ -266,7 +266,6 @@ pub extern "C" fn row_set_type_info_get_code(
 pub extern "C" fn row_set_type_info_get_list_child<'typ>(
     type_info_handle: BridgedBorrowedSharedPtr<'typ, ColumnType<'typ>>,
     out_child_handle: *mut BridgedBorrowedSharedPtr<'typ, ColumnType<'typ>>,
-    out_is_frozen: *mut i32,
 ) -> i32 {
     if type_info_handle.is_null() {
         return 0;
@@ -276,7 +275,7 @@ pub extern "C" fn row_set_type_info_get_list_child<'typ>(
     match type_info {
         ColumnType::Collection {
             typ: CollectionType::List(inner),
-            frozen,
+            ..
         } => {
             if out_child_handle.is_null() {
                 return 0;
@@ -284,7 +283,6 @@ pub extern "C" fn row_set_type_info_get_list_child<'typ>(
             let child = inner.as_ref();
             unsafe {
                 out_child_handle.write(RefFFI::as_ptr(child));
-                out_is_frozen.write(if *frozen { 1 } else { 0 });
             }
             1
         }

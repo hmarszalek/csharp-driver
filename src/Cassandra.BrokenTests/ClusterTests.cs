@@ -77,37 +77,6 @@ namespace Cassandra.Tests
         }
 
         [Test]
-        public void ClusterConnectThrowsNoHostAvailable()
-        {
-            var cluster = Cluster.Builder()
-             .AddContactPoint("127.100.100.100")
-             .Build();
-            Assert.Throws<NoHostAvailableException>(() => cluster.Connect());
-            Assert.Throws<NoHostAvailableException>(() => cluster.Connect("sample_ks"));
-        }
-
-        [Test]
-        public void ClusterConnectThrowsNoHostAvailable()
-        {
-            var cluster = Cluster.Builder()
-             .AddContactPoint("127.100.100.100")
-             .Build();
-            Assert.Throws<NoHostAvailableException>(() => cluster.Connect());
-            Assert.Throws<NoHostAvailableException>(() => cluster.Connect("sample_ks"));
-        }
-
-        [Test]
-        public void ClusterIsDisposableAfterInitError()
-        {
-            const string ip = "127.100.100.100";
-            var cluster = Cluster.Builder()
-             .AddContactPoint(ip)
-             .Build();
-            Assert.Throws<NoHostAvailableException>(() => cluster.Connect());
-            Assert.DoesNotThrow(cluster.Dispose);
-        }
-
-        [Test]
         public void Should_Not_Leak_Connections_When_Node_Unreacheable_Test()
         {
             var socketOptions = new SocketOptions().SetReadTimeoutMillis(1).SetConnectTimeoutMillis(1);

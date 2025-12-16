@@ -9,6 +9,7 @@ use crate::ffi::{
 };
 use crate::task::BridgedFuture;
 
+// TO DO: Don't use mock RowSet - remove Option<> from the pager field
 #[derive(Debug)]
 pub(crate) struct RowSet {
     // FIXME: consider if this Mutex is necessary. Perhaps BoxFFI is a better fit?
@@ -21,7 +22,16 @@ pub(crate) struct RowSet {
     // and it's possible that C# code will call row_set_next_row concurrently,
     // because RowSet claims it supports parallel enumeration, and does not enforce any locking
     // on its own.
-    pub(crate) pager: std::sync::Mutex<QueryPager>,
+    pub(crate) pager: std::sync::Mutex<Option<QueryPager>>,
+}
+
+impl RowSet {
+    // Creates an empty RowSet with no pager (zero rows, zero columns).
+    pub(crate) fn empty() -> Self {
+        RowSet {
+            pager: std::sync::Mutex::new(None),
+        }
+    }
 }
 
 impl FFI for RowSet {
@@ -44,7 +54,7 @@ pub extern "C" fn row_set_get_columns_count(
 ) -> usize {
     let row_set = ArcFFI::as_ref(row_set_ptr).unwrap();
     let pager = row_set.pager.lock().unwrap();
-    pager.column_specs().len()
+    pager.as_ref().map(|p| p.column_specs().len()).unwrap_or(0)
 }
 
 // TODO: Add specific lifetime parameter to ColumnType
@@ -73,9 +83,12 @@ pub extern "C" fn row_set_fill_columns_metadata(
     row_set_ptr: BridgedBorrowedSharedPtr<'_, RowSet>,
     columns_ptr: ColumnsPtr,
     set_metadata: SetMetadata,
-) -> i32 {
+) {
     let row_set = ArcFFI::as_ref(row_set_ptr).unwrap();
-    let pager = row_set.pager.lock().unwrap();
+    let pager_guard = row_set.pager.lock().unwrap();
+    let Some(pager) = pager_guard.as_ref() else {
+        return;
+    };
 
     // Iterate column specs and call the metadata setter
     for (i, spec) in pager.column_specs().iter().enumerate() {
@@ -138,7 +151,6 @@ pub extern "C" fn row_set_fill_columns_metadata(
             );
         }
     }
-    pager.column_specs().len() as i32
 }
 
 #[derive(Clone, Copy)]
@@ -180,7 +192,10 @@ pub extern "C" fn row_set_next_row<'row_set>(
     serializer_ptr: SerializerPtr,
 ) -> i32 {
     let row_set = ArcFFI::as_ref(row_set_ptr).unwrap();
-    let mut pager = row_set.pager.lock().unwrap();
+    let mut pager_guard = row_set.pager.lock().unwrap();
+    let Some(pager) = pager_guard.as_mut() else {
+        return 0; // Empty RowSet has no rows
+    };
     let num_columns = pager.column_specs().len();
 
     let deserialize_fut = async {

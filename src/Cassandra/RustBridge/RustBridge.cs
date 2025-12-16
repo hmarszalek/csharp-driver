@@ -152,7 +152,10 @@ namespace Cassandra
                 {
                     // Interpret as ANSI C string (nul-terminated)
                     string errorMsg = Marshal.PtrToStringUTF8(errorMsgPtr)!;
-                    tcs.SetException(new RustException(errorMsg));
+
+                    // Map Rust errors to appropriate C# exceptions
+                    Exception exception = MapRustErrorToException(errorMsg);
+                    tcs.SetException(exception);
 
                     // Free the handle so the TCS can be collected once no longer used
                     // by the C# code.
@@ -169,6 +172,27 @@ namespace Cassandra
             {
                 Console.Error.WriteLine($"[FFI] FailTask threw exception: {ex}");
             }
+        }
+
+        // TODO: Remove this method once we have proper error handling in the driver.
+        private static Exception MapRustErrorToException(string errorMsg)
+        {
+            // Check for connection-related errors that should be NoHostAvailableException
+            if (errorMsg.Contains("Connection refused"))
+            {
+                return new NoHostAvailableException(errorMsg);
+            }
+
+            // Check for invalid query errors (e.g., keyspace doesn't exist)
+            var lowerMsg = errorMsg.ToLower();
+            if (lowerMsg.Contains("keyspace") || 
+                lowerMsg.Contains("does not exist"))
+            {
+                return new InvalidQueryException(errorMsg);
+            }
+
+            // Default to RustException for other errors
+            return new RustException(errorMsg);
         }
     }
 }

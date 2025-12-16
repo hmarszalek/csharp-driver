@@ -1,6 +1,6 @@
 use scylla::statement::prepared::PreparedStatement;
 
-use crate::ffi::{ArcFFI, BridgedBorrowedSharedPtr, FFI, FromArc};
+use crate::ffi::{ArcFFI, BridgedBorrowedSharedPtr, BridgedOwnedSharedPtr, FFI, FromArc};
 
 #[derive(Debug)]
 pub struct BridgedPreparedStatement {
@@ -9,6 +9,14 @@ pub struct BridgedPreparedStatement {
 
 impl FFI for BridgedPreparedStatement {
     type Origin = FromArc;
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn prepared_statement_free(
+    prepared_statement_ptr: BridgedOwnedSharedPtr<BridgedPreparedStatement>,
+) {
+    ArcFFI::free(prepared_statement_ptr);
+    tracing::trace!("[FFI] Prepared statement freed");
 }
 
 #[unsafe(no_mangle)]

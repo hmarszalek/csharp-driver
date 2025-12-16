@@ -85,7 +85,90 @@ pub extern "C" fn session_query(
         tracing::trace!("[FFI] Statement executed");
 
         Ok(RowSet {
-            pager: std::sync::Mutex::new(query_pager),
+            pager: std::sync::Mutex::new(Some(query_pager)),
         })
+    })
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn session_query_bound(
+    tcb: Tcb,
+    session_ptr: BridgedBorrowedSharedPtr<'_, BridgedSession>,
+    prepared_statement_ptr: BridgedBorrowedSharedPtr<'_, BridgedPreparedStatement>,
+) {
+    let bridged_prepared = ArcFFI::cloned_from_ptr(prepared_statement_ptr).unwrap();
+    let bridged_session = ArcFFI::cloned_from_ptr(session_ptr).unwrap();
+
+    tracing::trace!("[FFI] Scheduling prepared statement execution");
+
+    BridgedFuture::spawn::<_, _, PagerExecutionError>(tcb, async move {
+        tracing::debug!("[FFI] Executing prepared statement");
+
+        let query_pager = bridged_session
+            .inner
+            .execute_iter(bridged_prepared.inner.clone(), ())
+            .await?;
+        tracing::trace!("[FFI] Prepared statement executed");
+
+        Ok(RowSet {
+            pager: std::sync::Mutex::new(Some(query_pager)),
+        })
+    })
+}
+
+// TO DO: Handle setting keyspace in session_query
+#[unsafe(no_mangle)]
+pub extern "C" fn session_use_keyspace(
+    tcb: Tcb,
+    session_ptr: BridgedBorrowedSharedPtr<'_, BridgedSession>,
+    keyspace: CSharpStr<'_>,
+    case_sensitive: i32,
+) {
+    let keyspace = keyspace.as_cstr().unwrap().to_str().unwrap().to_owned();
+    let bridged_session = ArcFFI::cloned_from_ptr(session_ptr).unwrap();
+    let case_sensitive = case_sensitive != 0;
+
+    tracing::trace!(
+        "[FFI] Scheduling use_keyspace: \"{}\" (case_sensitive: {})",
+        keyspace,
+        case_sensitive
+    );
+    BridgedFuture::spawn::<_, _, PagerExecutionError>(tcb, async move {
+        tracing::debug!("[FFI] Executing use_keyspace \"{}\"", keyspace);
+
+        // TO DO: Fix error handling here to create a new C# exception type for
+        // UseKeyspaceError when use_keyspace isn't called anymore as part of Execute.
+        // Use Session::use_keyspace() to update the Rust session's internal keyspace state.
+        bridged_session
+            .inner
+            .use_keyspace(&keyspace, case_sensitive)
+            .await
+            .map_err(|e| {
+                // Error type conversion: UseKeyspaceError -> PagerExecutionError
+                // We need this because BridgedFuture expects PagerExecutionError to match RowSet return.
+                match e {
+                    scylla::errors::UseKeyspaceError::RequestError(req_err) => {
+                        // Common case: request failure (e.g., keyspace doesn't exist)
+                        let req_error: scylla::errors::RequestError = req_err.into();
+                        PagerExecutionError::NextPageError(req_error.into())
+                    }
+                    scylla::errors::UseKeyspaceError::BadKeyspaceName(_)
+                    | scylla::errors::UseKeyspaceError::KeyspaceNameMismatch { .. }
+                    | scylla::errors::UseKeyspaceError::RequestTimeout(..)
+                    | _ => {
+                        // Catch-all for BadKeyspaceName, KeyspaceNameMismatch, RequestTimeout
+                        // and any future UseKeyspaceError variants (marked #[non_exhaustive])
+                        let req_attempt_err =
+                            scylla::errors::RequestAttemptError::UnexpectedResponse(
+                                scylla::errors::CqlResponseKind::Error,
+                            );
+                        let req_error: scylla::errors::RequestError = req_attempt_err.into();
+                        PagerExecutionError::NextPageError(req_error.into())
+                    }
+                }
+            })?;
+
+        tracing::trace!("[FFI] use_keyspace executed successfully");
+        Ok(RowSet::empty())
     })
 }

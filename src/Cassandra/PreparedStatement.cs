@@ -29,10 +29,21 @@ namespace Cassandra
     ///  pair of a prepared statement and values for its bound variables is a
     ///  BoundStatement and can be executed (by <link>Session#Execute</link>).</p>
     /// </summary>
-    public class PreparedStatement
+    public class PreparedStatement : SafeHandle
     {
+        public override bool IsInvalid => handle == IntPtr.Zero;
+
+        protected override bool ReleaseHandle()
+        {
+            prepared_statement_free(handle);
+            return true;
+        }
+
         [DllImport("csharp_wrapper", CallingConvention = CallingConvention.Cdecl)]
         unsafe private static extern int prepared_statement_is_lwt(IntPtr prepared_statement);
+
+        [DllImport("csharp_wrapper", CallingConvention = CallingConvention.Cdecl)]
+        unsafe private static extern void prepared_statement_free(IntPtr prepared_statement);
 
         private readonly RowSetMetadata _variablesRowsMetadata;
         private readonly ISerializerManager _serializerManager = SerializerManager.Default;
@@ -110,16 +121,8 @@ namespace Cassandra
 
         public bool IsLwt => _isLwt;
 
-        /// <summary>
-        /// Initializes a new instance of the Cassandra.PreparedStatement class
-        /// </summary>
-        public PreparedStatement()
-        {
-            //Default constructor for client test and mocking frameworks
-        }
-
         internal PreparedStatement(RowSetMetadata variablesRowsMetadata, byte[] id, string cql,
-                                   string keyspace, ISerializerManager serializer, bool isLwt)
+                                   string keyspace, ISerializerManager serializer, bool isLwt) : base(IntPtr.Zero, true)
         {
             _variablesRowsMetadata = variablesRowsMetadata;
             Id = id;
@@ -130,8 +133,9 @@ namespace Cassandra
         }
 
         // For use by the Rust interop code.
-        internal PreparedStatement(IntPtr preparedStatementPtr, string cql, RowSetMetadata variablesRowsMetadata)
+        internal PreparedStatement(IntPtr preparedStatementPtr, string cql, RowSetMetadata variablesRowsMetadata) : base(IntPtr.Zero, true)
         {
+            handle = preparedStatementPtr;
             bool isLwt = prepared_statement_is_lwt(preparedStatementPtr) != 0;
 
             _variablesRowsMetadata = variablesRowsMetadata;

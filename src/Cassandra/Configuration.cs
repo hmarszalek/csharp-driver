@@ -227,6 +227,14 @@ namespace Cassandra
             // ExecutionProfiles = BuildExecutionProfilesDictionary(executionProfiles, RequestOptions);
             ExecutionProfiles = null;
 
+            // Build RequestOptions from execution profiles
+            RequestOptions = new RequestOptionsMapper().BuildRequestOptionsDictionary(
+                executionProfiles ?? new Dictionary<string, IExecutionProfile>(),
+                policies,
+                socketOptions,
+                clientOptions,
+                queryOptions);
+
             MonitorReportingOptions = monitorReportingOptions ?? new MonitorReportingOptions();
         }
 

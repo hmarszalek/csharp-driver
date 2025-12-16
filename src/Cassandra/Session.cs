@@ -50,7 +50,13 @@ namespace Cassandra
         unsafe private static extern void session_query(Tcb tcb, IntPtr session, [MarshalAs(UnmanagedType.LPUTF8Str)] string statement);
 
         [DllImport("csharp_wrapper", CallingConvention = CallingConvention.Cdecl)]
+        unsafe private static extern void session_use_keyspace(Tcb tcb, IntPtr session, [MarshalAs(UnmanagedType.LPUTF8Str)] string keyspace, int isCaseSensitive);
+
+        [DllImport("csharp_wrapper", CallingConvention = CallingConvention.Cdecl)]
         unsafe private static extern void session_prepare(Tcb tcb, IntPtr session, [MarshalAs(UnmanagedType.LPUTF8Str)] string statement);
+
+        [DllImport("csharp_wrapper", CallingConvention = CallingConvention.Cdecl)]
+        unsafe private static extern void session_query_bound(Tcb tcb, IntPtr session, IntPtr preparedStatement);
 
         private static readonly Logger Logger = new Logger(typeof(Session));
         private readonly ICluster _cluster;
@@ -100,7 +106,7 @@ namespace Cassandra
             handle = sessionPtr;
         }
 
-        static internal Task<ISession> CreateAsync(
+        static internal async Task<ISession> CreateAsync(
             ICluster cluster,
             string contactPointUris,
             string keyspace)
@@ -123,12 +129,33 @@ namespace Cassandra
             // This is a common pattern to call C# code from native code ("reversed P/Invoke").
             session_create(tcb, contactPointUris);
 
-            return tcs.Task.ContinueWith(t =>
+            IntPtr sessionPtr = await tcs.Task.ConfigureAwait(false);
+            var session = new Session(cluster, keyspace, sessionPtr);
+
+            // If a keyspace was specified, validate it exists by executing USE statement
+            // This should throw InvalidQueryException if keyspace doesn't exist.
+            if (!string.IsNullOrEmpty(keyspace))
             {
-                IntPtr sessionPtr = t.Result;
-                var session = new Session(cluster, keyspace, sessionPtr);
-                return (ISession)session;
-            }, TaskContinuationOptions.ExecuteSynchronously);
+                try {
+                    await session.ExecuteAsync(new SimpleStatement(CqlQueryTools.GetUseKeyspaceCql(keyspace)));
+                }
+                // TO DO: Catch more specific exception from Rust driver when keyspace does not exist.
+                catch (Exception)
+                {
+                    // If validation fails, instantly dispose the session to avoid connection pool errors.
+                    try 
+                    {
+                        session.Dispose();
+                    } 
+                    catch (Exception ex)
+                    {
+                        Session.Logger.Error($"Failed to dispose session during keyspace validation cleanup: {ex}"); 
+                    }
+                    throw;
+                }
+            }
+
+            return session;
         }
 
         /// <inheritdoc />
@@ -157,7 +184,6 @@ namespace Cassandra
                 // FIXME: Migrate to Rust `Session::use_keyspace()`.
 
                 Execute(new SimpleStatement(CqlQueryTools.GetUseKeyspaceCql(keyspace)));
-                Keyspace = keyspace;
             }
         }
 
@@ -217,7 +243,17 @@ namespace Cassandra
 
             // FIXME: Actually perform shutdown.
             // Remember to dequeue from Cluster's sessions list.
-            return Task.FromResult<object>(null);
+
+            // Dispose the session handle which will call session_free in Rust.
+            try 
+            {
+                return Task.Run(() => Dispose());
+            } 
+            catch (Exception ex)
+            {
+                Session.Logger.Error($"Failed to dispose session during shutdown: {ex}"); 
+                throw;
+            }
         }
 
         /// <inheritdoc />
@@ -294,37 +330,79 @@ namespace Cassandra
                     string queryString = s.QueryString;
                     object[] queryValues = s.QueryValues ?? [];
 
+                    // Check if this is a USE statement to track keyspace changes.
+                    // TODO: perform whole logic related to USE statements on the Rust side.
+                    bool isUseStatement = IsUseKeyspace(queryString, out string newKeyspace);
+
                     TaskCompletionSource<IntPtr> tcs = new(TaskCreationOptions.RunContinuationsAsynchronously);
                     Tcb tcb = Tcb.WithTcs(tcs);
 
-                    // TODO: support queries with values
-                    if (queryValues.Length > 0)
+                    if (queryValues == null || queryValues.Length == 0)
                     {
+                        // Use session_use_keyspace for USE statements and session_query for other statements.
+                        // TODO: perform whole logic related to USE statements on the Rust side.
+                        if (isUseStatement)
+                        {
+                            // For USE statements, call the dedicated use_keyspace method
+                            // case_sensitive = 1 (true) to respect the exact casing provided.
+                            session_use_keyspace(tcb, handle, newKeyspace, 1);
+                        }
+                        else
+                        {
+                            session_query(tcb, handle, queryString);
+                        }
+                    }
+                    else
+                    {
+                        // TODO: support queries with values.
                         throw new NotImplementedException("Regular statements with values are not yet supported");
                     }
-                    session_query(tcb, handle, queryString);
 
                     return tcs.Task.ContinueWith(t =>
                     {
                         IntPtr rowSetPtr = t.Result;
                         var rowSet = new RowSet(rowSetPtr);
+
+                        // TODO: Fix this logic once we have proper USE statement handling in the driver. Make sure no race conditions occur when updating the keyspace
+                        if (isUseStatement)
+                        {
+                            _keyspace = newKeyspace;
+                        }
+
                         return rowSet;
                     }, TaskContinuationOptions.ExecuteSynchronously);
 
                 case BoundStatement bs:
-                    if (bs.QueryValues.Length == 0)
+                    // Only support bound statements without values for now.
+                    TaskCompletionSource<IntPtr> boundTcs = new(TaskCreationOptions.RunContinuationsAsynchronously);
+                    Tcb boundTcb = Tcb.WithTcs(boundTcs);
+
+                    // The managed PreparedStatement object (and the BoundStatement that
+                    // references it) is rooted here by the local variable `bs`. Because there's an
+                    // active reference in this scope, the GC will not collect the managed object
+                    // while this method is executing — so the native resource under the pointer
+                    // is guaranteed to still exist for the duration of this call.
+                    IntPtr queryPrepared = bs.PreparedStatement.DangerousGetHandle();
+                    object[] queryValuesBound = bs.QueryValues ?? [];
+
+                    if (queryValuesBound == null || queryValuesBound.Length == 0)
                     {
-                        throw new NotImplementedException("Bound statements without values are not yet supported");
+                        session_query_bound(boundTcb, handle, queryPrepared);
                     }
                     else
                     {
                         throw new NotImplementedException("Bound statements with values are not yet supported");
                     }
-                // break;
+
+                    return boundTcs.Task.ContinueWith(t =>
+                    {
+                        IntPtr rowSetPtr = t.Result;
+                        return new RowSet(rowSetPtr);
+                    }, TaskContinuationOptions.ExecuteSynchronously);
 
                 case BatchStatement s:
                     throw new NotImplementedException("Batches are not yet supported");
-                // break;
+                    // break;
 
                 default:
                     throw new ArgumentException("Unsupported statement type");
@@ -440,6 +518,43 @@ namespace Cassandra
             }
 
             return profile;
+        }
+
+        // TODO: Remove this method once we have proper USE statement handling in the driver.
+        // Checks if a query is a USE statement and extracts the keyspace name.
+        // Returns true if the query is a USE statement, false otherwise.
+        private bool IsUseKeyspace(string query, out string keyspace)
+        {
+            keyspace = null;
+
+            if (string.IsNullOrWhiteSpace(query))
+                return false;
+
+            var trimmed = query.Trim();
+
+            // Check if it starts with USE (case-insensitive)
+            if (!trimmed.StartsWith("USE ", StringComparison.OrdinalIgnoreCase))
+                return false;
+
+            // Extract the keyspace name
+            var parts = trimmed.Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
+            if (parts.Length != 2)
+                return false;
+
+            var ksName = parts[1].TrimEnd(';');
+
+            // Remove quotes if present
+            if (ksName.StartsWith("\"") && ksName.EndsWith("\""))
+            {
+                keyspace = ksName.Substring(1, ksName.Length - 2).Replace("\"\"", "\"");
+            }
+            else
+            {
+                // Unquoted identifiers are lowercase in CQL.
+                keyspace = ksName.ToLower();
+            }
+
+            return true;
         }
     }
 }

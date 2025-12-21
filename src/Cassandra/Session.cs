@@ -69,6 +69,9 @@ namespace Cassandra
         [DllImport("csharp_wrapper", CallingConvention = CallingConvention.Cdecl)]
         unsafe private static extern void session_query_bound(Tcb tcb, IntPtr session, IntPtr preparedStatement);
 
+        [DllImport("csharp_wrapper", CallingConvention = CallingConvention.Cdecl)]
+        unsafe private static extern void session_query_bound_with_values(Tcb tcb, IntPtr session, IntPtr preparedStatement, IntPtr valuesPtr);
+
         private static readonly Logger Logger = new Logger(typeof(Session));
         private readonly ICluster _cluster;
         private int _disposed;
@@ -202,6 +205,7 @@ namespace Cassandra
         public void CreateKeyspace(string keyspace, Dictionary<string, string> replication = null, bool durableWrites = true)
         {
             WaitForSchemaAgreement(Execute(CqlQueryTools.GetCreateKeyspaceCql(keyspace, replication, durableWrites, false)));
+            Thread.Sleep(100);
             Session.Logger.Info("Keyspace [" + keyspace + "] has been successfully CREATED.");
         }
 
@@ -408,7 +412,12 @@ namespace Cassandra
                     }
                     else
                     {
-                        throw new NotImplementedException("Bound statements with values are not yet supported");
+                        session_query_bound_with_values(
+                            boundTcb,
+                            handle,
+                            bs.PreparedStatement.DangerousGetHandle(),
+                            SerializationHandler.InitializeSerializedValues(bs.QueryValues).TakeNativeHandle()
+                        );
                     }
 
                     return boundTcs.Task.ContinueWith(t =>

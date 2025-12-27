@@ -8,10 +8,12 @@ use crate::ffi::{
     ArcFFI, BoxFFI, BridgedBorrowedSharedPtr, BridgedOwnedExclusivePtr, BridgedOwnedSharedPtr, FFI,
     FromArc,
 };
+use crate::metadata::BridgedClusterState;
 use crate::pre_serialized_values::pre_serialized_values::PreSerializedValues;
 use crate::prepared_statement::BridgedPreparedStatement;
 use crate::row_set::RowSet;
 use crate::task::{BridgedFuture, Tcb};
+use std::sync::Arc;
 
 impl FFI for BridgedSession {
     type Origin = FromArc;
@@ -222,4 +224,20 @@ pub extern "C" fn session_use_keyspace(
         tracing::trace!("[FFI] use_keyspace executed successfully");
         Ok(RowSet::empty())
     })
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn session_get_cluster_state(
+    session_ptr: BridgedBorrowedSharedPtr<'_, BridgedSession>,
+) -> BridgedOwnedSharedPtr<BridgedClusterState> {
+    let bridged_session = ArcFFI::as_ref(session_ptr).unwrap();
+    let cluster_state = bridged_session.inner.get_cluster_state();
+
+    // Wrap the Arc<ClusterState> in BridgedClusterState and return via FFI abstraction.
+    // The Arc keeps the ClusterState alive until cluster_state_free is called.
+    // C# must call cluster_state_free to avoid memory leak.
+    let bridged = BridgedClusterState {
+        inner: cluster_state,
+    };
+    ArcFFI::into_ptr(Arc::new(bridged))
 }

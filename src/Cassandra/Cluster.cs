@@ -129,7 +129,6 @@ namespace Cassandra
         {
             get
             {
-                // TaskHelper.WaitToComplete(Init()); FIXME
                 return _metadata;
             }
         }
@@ -137,7 +136,7 @@ namespace Cassandra
         private Cluster(IEnumerable<object> contactPoints, Configuration configuration)
         {
             Configuration = configuration;
-            _metadata = new Metadata(configuration);
+            _metadata = new Metadata(configuration, GetActiveSessionOrThrow);
             var protocolVersion = _maxProtocolVersion;
             if (Configuration.ProtocolOptions.MaxProtocolVersionValue != null &&
                 Configuration.ProtocolOptions.MaxProtocolVersionValue.Value.IsSupported(configuration))
@@ -147,10 +146,22 @@ namespace Cassandra
             _contactPoints = configuration.ParseContactPoints(contactPoints);
         }
 
+        private Session GetActiveSessionOrThrow()
+        {
+            var activeSession = _connectedSessions.FirstOrDefault(s => s is Session session && !session.IsDisposed) as Session;
+
+            if (activeSession == null)
+            {
+                throw new InvalidOperationException(
+                    "No active sessions available in cluster. Create a session (for example, by calling Cluster.Connect()) before accessing metadata.");
+            }
+
+            return activeSession;
+        }
+
         /// <inheritdoc />
         public ICollection<Host> AllHosts()
         {
-            //Do not connect at first
             return _metadata.AllHosts();
         }
 

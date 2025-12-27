@@ -19,6 +19,9 @@ crate-type = ["cdylib", "lib"] # "lib" needed for doctests
 [profile.dev]
 panic = "abort"
 
+[profile.release]
+panic = "abort"
+
 [dev-dependencies]
 ntest = "0.9"
 uuid = "1"

@@ -15,16 +15,13 @@
 //
 
 using System;
-using System.Collections.Concurrent;
 using System.Collections.Generic;
-using System.Linq;
 using System.Net;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
 using Cassandra.Collections;
-using Cassandra.Tasks;
 
 namespace Cassandra
 {
@@ -40,30 +37,43 @@ namespace Cassandra
         public event SchemaChangedEventHandler SchemaChangedEvent;
 #pragma warning restore CS0067
 
-        [DllImport("csharp_wrapper", CallingConvention = CallingConvention.Cdecl)]
+        [DllImport(NativeLibrary.CSharpWrapper, CallingConvention = CallingConvention.Cdecl)]
+        private static extern bool cluster_state_compare_ptr(
+            IntPtr ptr1,
+            IntPtr ptr2);
+        
+        [DllImport(NativeLibrary.CSharpWrapper, CallingConvention = CallingConvention.Cdecl)]
         private static extern IntPtr cluster_state_get_raw_ptr(IntPtr clusterStatePtr);
 
-        [DllImport("csharp_wrapper", CallingConvention = CallingConvention.Cdecl)]
+        [DllImport(NativeLibrary.CSharpWrapper, CallingConvention = CallingConvention.Cdecl)]
         private static extern void cluster_state_fill_nodes(
             IntPtr clusterStatePtr,
             IntPtr listPtr,
             IntPtr callback);
 
-        [DllImport("csharp_wrapper", CallingConvention = CallingConvention.Cdecl)]
+        [DllImport(NativeLibrary.CSharpWrapper, CallingConvention = CallingConvention.Cdecl)]
         private static extern void cluster_state_free(IntPtr clusterStatePtr);
 
         private static readonly unsafe delegate* unmanaged[Cdecl]<IntPtr, IntPtr, nuint, ushort, IntPtr, nuint, IntPtr, nuint, IntPtr, void> AddHostPtr = &AddHostToList;
 
-        private class RefreshContext
-        {
-            public Dictionary<IPEndPoint, Host> NewHosts { get; }
-            public CopyOnWriteDictionary<IPEndPoint, Host> OldHosts { get; }
+        private static readonly unsafe delegate* unmanaged[Cdecl]<IntPtr, IntPtr, int, void> OnReplicaPairPtr = &OnReplicaPairCallback;
 
-            public RefreshContext(CopyOnWriteDictionary<IPEndPoint, Host> oldHosts)
-            {
-                OldHosts = oldHosts;
-                NewHosts = new Dictionary<IPEndPoint, Host>(oldHosts.Count);
-            }
+        // NOTE: Token map replica resolution without table context currently forces Murmur3
+        // on the Rust side via cluster_state_get_replicas_murmur3.
+        [DllImport(NativeLibrary.CSharpWrapper, CallingConvention = CallingConvention.Cdecl)]
+        private static extern FfiError cluster_state_get_replicas_murmur3(
+            IntPtr clusterStatePtr,
+            [MarshalAs(UnmanagedType.LPUTF8Str)] string keyspace,
+            IntPtr partitionKeyPtr,
+            nuint partitionKeyLen,
+            IntPtr callbackState,
+            IntPtr callback);
+
+        private class RefreshContext(CopyOnWriteDictionary<IPEndPoint, Host> oldHosts)
+        {
+            public Dictionary<IPEndPoint, Host> NewHosts { get; } = new(oldHosts.Count);
+            public Dictionary<Guid, Host> NewHostsById { get; } = new(oldHosts.Count);
+            public CopyOnWriteDictionary<IPEndPoint, Host> OldHosts { get; } = oldHosts;
         }
 
         [UnmanagedCallersOnly(CallConvs = new Type[] { typeof(CallConvCdecl) })]
@@ -80,16 +90,16 @@ namespace Cassandra
         {
             try
             {
-                // Safety: 
-                // contextPtr is a pointer to the stack slot holding the 'hosts' reference (not to the heap object itself).
-                // Unsafe.AsPointer(ref T) returns the address of the managed pointer (the stack local).
-                // The stack slot is stable for the duration of this callback since:
-                // 1. cluster_state_fill_nodes calls this callback synchronously before returning
-                // 2. The stack frame containing 'hosts' remains alive throughout the FFI call
-                // 3. If GC moves the List<Host> object on the heap, it updates the reference value in the stack slot
-                // 4. Unsafe.Read dereferences the pointer to get the current reference value
-                // This matches the pattern used in row_set_fill_columns_metadata.
-                var context = Unsafe.Read<RefreshContext>((void*)contextPtr);
+                // Safety:
+                // contextPtr is an IntPtr created from a GCHandle (via GCHandle.ToIntPtr) in AllHosts().
+                // We retrieve the managed RefreshContext using GCHandle.FromIntPtr(contextPtr).Target.
+                // This avoids taking an address of a managed object and is safe against GC movement.
+                var handle = GCHandle.FromIntPtr(contextPtr);
+                var context = handle.Target as RefreshContext;
+                if (context == null)
+                {
+                    Environment.FailFast("Invalid GCHandle context in AddHostCallback");
+                }
 
                 // Construct IPAddress directly from bytes (4 for IPv4, 16 for IPv6). ipBytes is a ReadOnlySpan over 
                 // unmanaged memory (ipBytesPtr) that is only valid for the duration of this callback invocation. 
@@ -98,29 +108,69 @@ namespace Cassandra
                 var ipAddress = new IPAddress(ipBytes);
                 var address = new IPEndPoint(ipAddress, port);
 
-                // TODO: Consider changing the cache key to host id as it is meant to be the primary identifier of the hosts
-                if (context.OldHosts.TryGetValue(address, out var host))
+                // Rust UUID is in big-endian format, but .NET Guid has mixed-endian layout.
+                var hostIdBytes = new ReadOnlySpan<byte>((void*)hostIdBytesPtr, 16);
+                var hostId = new Guid(hostIdBytes);
+
+                // Try to reuse existing host object if address matches
+                if (context.OldHosts != null && context.OldHosts.TryGetValue(address, out var host))
                 {
-                    context.NewHosts[address] = host;
-                    return;
+                    // If the host ID matches, reuse the instance.
+                    if (host.HostId == hostId)
+                    {
+                        context.NewHosts[address] = host;
+                        context.NewHostsById[hostId] = host;
+                        return;
+                    }
                 }
 
                 var datacenter = (datacenterPtr == IntPtr.Zero || datacenterLen == 0) ? null : Marshal.PtrToStringUTF8(datacenterPtr, (int)datacenterLen);
                 var rack = (rackPtr == IntPtr.Zero || rackLen == 0) ? null : Marshal.PtrToStringUTF8(rackPtr, (int)rackLen);
 
-                // Rust UUID is in big-endian format, but .NET Guid has mixed-endian layout.
-                // Fortunately Guid has a constructor that automatically handles this conversion.
-                var hostIdBytes = new ReadOnlySpan<byte>((void*)hostIdBytesPtr, 16);
-                var hostId = new Guid(hostIdBytes);
-
                 host = new Host(address, hostId, datacenter, rack);
                 context.NewHosts[address] = host;
+                context.NewHostsById[hostId] = host;
             }
             catch (Exception ex)
             {
-                // Do not throw across FFI boundary - causes undefined behavior.
-                // Fail fast to match Rust's panic=abort behavior and make the error obvious.
                 Environment.FailFast("Fatal error in AddHostCallback", ex);
+            }
+        }
+
+        private class GetReplicasContext(CopyOnWriteDictionary<Guid, Host> hostsById)
+        {
+            public List<HostShard> Replicas { get; } = [];
+            public CopyOnWriteDictionary<Guid, Host> HostsById { get; } = hostsById;
+        }
+
+        [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+        private static unsafe void OnReplicaPairCallback(IntPtr statePtr, IntPtr hostIdBytesPtr, int shard)
+        {
+            try
+            {
+                var handle = GCHandle.FromIntPtr(statePtr);
+                var context = handle.Target as GetReplicasContext;
+                if (context == null)
+                {
+                    Environment.FailFast("Invalid GCHandle context in OnReplicaPairCallback");
+                }
+
+                var hostIdBytes = new ReadOnlySpan<byte>((void*)hostIdBytesPtr, 16);
+                var hostId = new Guid(hostIdBytes);
+
+                if (context.HostsById.TryGetValue(hostId, out var host))
+                {
+                    context.Replicas.Add(new HostShard(host, shard));
+                }
+                else
+                {
+                    // Host not found in metadata, possibly removed or inconsistent state.
+                    // We could log this, but for now we just skip it.
+                }
+            }
+            catch (Exception ex)
+            {
+                Environment.FailFast("Fatal error in OnReplicaPairCallback", ex);
             }
         }
 
@@ -145,12 +195,12 @@ namespace Cassandra
         // It either returns a valid Session or throws InvalidOperationException.
         private readonly Func<Session> _getActiveSessionOrThrow;
 
-        // Pointer to the last cluster state used to detect changes. This is a raw pointer 
-        // stored only for comparison purposes - it does not extend the lifetime of the ClusterState. 
+        // Pointer to the last cluster state used to detect changes.
         // Volatile ensures visibility of updates across threads for the lock-free read in AllHosts().
         private volatile IntPtr _lastClusterStatePtr = IntPtr.Zero;
 
         private CopyOnWriteDictionary<IPEndPoint, Host> _cachedHosts = new CopyOnWriteDictionary<IPEndPoint, Host>();
+        private CopyOnWriteDictionary<Guid, Host> _cachedHostsById = new CopyOnWriteDictionary<Guid, Host>();
 
         private readonly object _hostLock = new object();
 
@@ -190,27 +240,6 @@ namespace Cassandra
             return _cachedHosts.Values;
         }
 
-        public IEnumerable<IPEndPoint> AllReplicas()
-        {
-            throw new NotImplementedException();
-        }
-
-        // for tests
-        internal KeyValuePair<string, KeyspaceMetadata>[] KeyspacesSnapshot => throw new NotImplementedException();
-
-        /// <summary>
-        /// Get the replicas for a given partition key and keyspace
-        /// </summary>
-        public ICollection<HostShard> GetReplicas(string keyspaceName, byte[] partitionKey)
-        {
-            throw new NotImplementedException();
-        }
-
-        public ICollection<HostShard> GetReplicas(byte[] partitionKey)
-        {
-            throw new NotImplementedException();
-        }
-
         /// <summary>
         /// Updates the cached topology if the cluster state has changed.
         /// </summary>
@@ -246,29 +275,124 @@ namespace Cassandra
                     }
 
 
-                // Otherwise we are forced to refill all hosts.
-                var context = new RefreshContext(_cachedHosts);
-                unsafe
-                {
-                    cluster_state_fill_nodes(
-                        clusterStatePtr,
-                        (IntPtr)Unsafe.AsPointer(ref context),
-                        (IntPtr)AddHostPtr
-                    );
-                }
+                    // Otherwise we are forced to refill all hosts.
+                    var context = new RefreshContext(_cachedHosts);
+                    var gch = GCHandle.Alloc(context, GCHandleType.Normal);
+                    try
+                    {
+                        unsafe
+                        {
+                            cluster_state_fill_nodes(
+                                clusterStatePtr,
+                                GCHandle.ToIntPtr(gch),
+                                (IntPtr)AddHostPtr
+                            );
+                        }
+                    }
+                    finally
+                    {
+                        gch.Free();
+                    }
 
-                Interlocked.Exchange(ref _cachedHosts, new CopyOnWriteDictionary<IPEndPoint, Host>(context.NewHosts));
+                    Interlocked.Exchange(ref _cachedHosts,
+                        new CopyOnWriteDictionary<IPEndPoint, Host>(context.NewHosts));
+                    Interlocked.Exchange(ref _cachedHostsById,
+                        new CopyOnWriteDictionary<Guid, Host>(context.NewHostsById));
 
-                    // Store the raw pointer address for future comparisons.
-                    _lastClusterStatePtr = rawPtr;
+                    // Free the old cluster state pointer if it exists. Make sure to update it atomically
+                    // and before calling free to avoid other threads reading a freed pointer.
+                    var oldPtr = Interlocked.Exchange(ref _lastClusterStatePtr, clusterStatePtr);
+                    if (oldPtr != IntPtr.Zero)
+                    {
+                        cluster_state_free(oldPtr);
+                    }
                 }
             }
             finally
             {
-                // Always free the fetched cluster state pointer to avoid memory leak.
-                // This frees the Arc we got from session_get_cluster_state.
                 cluster_state_free(clusterStatePtr);
             }
+        }
+
+
+        // for tests
+        internal KeyValuePair<string, KeyspaceMetadata>[] KeyspacesSnapshot => throw new NotImplementedException();
+
+        /// <summary>
+        /// Get the replicas for a given partition key and keyspace
+        /// </summary>
+        public ICollection<HostShard> GetReplicas(string keyspaceName, byte[] partitionKey)
+        {
+            // Ensure cache is up to date
+            AllHosts();
+
+            var session = _getActiveSessionOrThrow();
+            // FIXME: Handle session disposal race condition similar to AllHosts
+
+            // Request a fresh cluster state pointer for the native replica calculation.
+            // We get it once and free it in the finally block below.
+            var ptr = session.GetClusterStatePtr();
+            try
+            {
+                var context = new GetReplicasContext(_cachedHostsById);
+                var gch = GCHandle.Alloc(context, GCHandleType.Normal);
+                
+                // Pin the partition key if it's not empty. We pin it outside the lambda so the pointer
+                // can be safely captured by the lambda passed to ExecuteAndThrowIfFails.
+                GCHandle pinnedPkHandle = default;
+                if (partitionKey is { Length: > 0 })
+                {
+                    pinnedPkHandle = GCHandle.Alloc(partitionKey, GCHandleType.Pinned);
+                }
+                
+                try
+                {
+                    IntPtr pkPtr = pinnedPkHandle.IsAllocated ? pinnedPkHandle.AddrOfPinnedObject() : IntPtr.Zero;
+                    
+                    IntPtr callbackPtr;
+                    unsafe
+                    {
+                        callbackPtr = (IntPtr)OnReplicaPairPtr;
+                    }
+
+                    // NOTE: C# Metadata.GetReplicas doesn't provide the table name.
+                    // For correctness, token computation should use the cluster/table partitioner; and for Scylla
+                    // tablet routing we also need table context. Until we extend the API/bridge, force Murmur3.
+                    // FIXME: Use metadata-derived partitioner
+                    FfiErrorHelpers.ExecuteAndThrowIfFails(() => cluster_state_get_replicas_murmur3(
+                        ptr,
+                        keyspaceName,
+                        pkPtr,
+                        (nuint)(partitionKey?.Length ?? 0),
+                        GCHandle.ToIntPtr(gch),
+                        callbackPtr
+                    ));
+                    
+                    return context.Replicas;
+                }
+                finally
+                {
+                    gch.Free();
+                    if (pinnedPkHandle.IsAllocated)
+                    {
+                        pinnedPkHandle.Free();
+                    }
+                }
+            }
+            finally
+            {
+                cluster_state_free(ptr);
+            }
+        }
+
+        public ICollection<HostShard> GetReplicas(byte[] partitionKey)
+        {
+            // TODO: is it even correct?
+            // The idea is to retrieve the primary replicas for the partition key when the keyspace is not specified,
+            // since no replication strategy can be applied - that's how it worked in the original driver.
+            // In this case, when no keyspace is specified, the Rust side replica locator with fall back to the default
+            // Simple Strategy with RF = 1, which achieves exactly what we're aiming for.
+            return GetReplicas("", partitionKey);
         }
 
         /// <summary>

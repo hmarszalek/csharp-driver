@@ -11,6 +11,28 @@ use std::ffi::{CStr, CString, c_char};
 use std::marker::PhantomData;
 use std::ptr::NonNull;
 
+#[macro_export]
+macro_rules! ffi_try {
+    // New simple form: (expr, fmt) -> always returns code 1
+    ($expr:expr, $fmt:expr $(,)?) => {
+        match $expr {
+            Ok(v) => v,
+            Err(e) => {
+                let msg = format!($fmt, e);
+                return $crate::FfiError::new(
+                    1,
+                    ::std::ffi::CString::new(msg)
+                        .unwrap_or_else(|_| ::std::ffi::CString::new("error").unwrap()),
+                );
+            }
+        }
+    };
+    // Backward-compatible form: (expr, _code, fmt) -> ignore provided code and use 1
+    ($expr:expr, $code:expr, $fmt:expr $(,)?) => {
+        $crate::ffi_try!($expr, $fmt)
+    };
+}
+
 #[repr(transparent)]
 #[derive(Clone, Copy)]
 pub struct FfiPtr<'a, T: Sized> {

@@ -11,6 +11,23 @@ use std::ffi::{CStr, CString, c_char};
 use std::marker::PhantomData;
 use std::ptr::NonNull;
 
+#[macro_export]
+macro_rules! ffi_try {
+    ($expr:expr, $code:expr, $fmt:expr $(,)?) => {
+        match $expr {
+            Ok(v) => v,
+            Err(e) => {
+                let msg = format!($fmt, e);
+                return $crate::FfiError::new(
+                    $code,
+                    ::std::ffi::CString::new(msg)
+                        .unwrap_or_else(|_| ::std::ffi::CString::new("error").unwrap()),
+                );
+            }
+        }
+    };
+}
+
 #[repr(transparent)]
 #[derive(Clone, Copy)]
 pub struct FfiPtr<'a, T: Sized> {

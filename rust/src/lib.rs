@@ -78,3 +78,10 @@ pub unsafe extern "C" fn ffi_error_free_message(msg: *mut c_char) {
         let _ = CString::from_raw(msg);
     }
 }
+
+/// Map any Display-able error into an `FfiError` with code=1.
+pub fn ffi_error_from_err(err: impl std::fmt::Display) -> FfiError {
+    let msg = format!("{}", err);
+    let c = CString::new(msg).unwrap_or_else(|_| CString::new("error").unwrap());
+    FfiError::new(1, c)
+}

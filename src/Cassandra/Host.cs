@@ -85,7 +85,7 @@ namespace Cassandra
         {
             // FIXME
         }
-
+        
         internal Host(IPEndPoint address, Guid hostId, string datacenter, string rack)
         {
             Address = address ?? throw new ArgumentNullException(nameof(address));

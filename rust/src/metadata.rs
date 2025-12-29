@@ -1,5 +1,18 @@
-use crate::ffi::{ArcFFI, BridgedOwnedSharedPtr, FFI, FromArc};
-use scylla::cluster::ClusterState;
+use crate::CSharpStr;
+use crate::FfiError;
+use crate::FfiPtr;
+use crate::ffi::{
+    ArcFFI, BridgedBorrowedSharedPtr, BridgedOwnedSharedPtr, FFI, FFIByteSlice, FFIStr, FromArc,
+};
+use crate::pre_serialized_values::csharp_memory::{CsharpSerializedValue, CsharpValuePtr};
+use crate::pre_serialized_values::pre_serialized_values::PreSerializedValues;
+use scylla::cluster::{ClusterState, Node};
+use scylla::errors::ClusterStateTokenError;
+use scylla::routing::partitioner::PartitionerName;
+use scylla::routing::{Shard, Token};
+use std::ffi::c_void;
+use std::sync::Arc;
+use thiserror::Error;
 
 impl FFI for ClusterState {
     type Origin = FromArc;
@@ -55,17 +68,44 @@ type ConstructCSharpHost = unsafe extern "C" fn(
     host_id_bytes: FFIByteSlice<'_>,
 );
 
-/// Populates a C# List<Host> with node information from the cluster state.
-/// For each node in the cluster state, this function:
-/// 1. Serializes the node's metadata (IP, port, datacenter, rack, host ID) to raw bytes
-/// 2. Invokes the callback with pointers to this temporary data
-/// 3. The callback must synchronously copy all data and add the Host to the list
-///
-/// # Safety
-/// - `list_ptr` must point to a valid C# List<Host> that remains allocated during this call
-/// - All string pointers passed to the callback are temporary and only valid during that invocation
-/// - The callback must copy string data (e.g., via Marshal.PtrToStringUTF8) and byte arrays (IP, host ID) immediately.
-/// - The callback must not throw exceptions; use Environment.FailFast on errors
+#[derive(Debug, Error)]
+enum MetadataBridgeError {
+    #[error("null string: {0}")]
+    NullString(&'static str),
+
+    #[error("utf8 error: {0}")]
+    Utf8(#[from] std::str::Utf8Error),
+
+    #[error("serialization error: {0}")]
+    Serialization(#[from] scylla_cql::serialize::SerializationError),
+
+    #[error("token error: {0}")]
+    Token(#[from] ClusterStateTokenError),
+}
+
+#[derive(Clone, Copy)]
+enum ReplicaList {}
+
+#[repr(transparent)]
+#[derive(Clone, Copy)]
+pub struct CallbackState(FfiPtr<'static, ReplicaList>);
+type OnReplicaPair = unsafe extern "C" fn(
+    callback_state: CallbackState,
+    host_id_bytes_as_ptr: *const u8,
+    shard: i32,
+);
+
+// Populates a C# List<Host> with node information from the cluster state.
+// For each node in the cluster state, this function:
+// 1. Serializes the node's metadata (IP, port, datacenter, rack, host ID) to raw bytes
+// 2. Invokes the callback with pointers to this temporary data
+// 3. The callback must synchronously copy all data and add the Host to the list
+//
+// # Safety
+// - `list_ptr` must point to a valid C# List<Host> that remains allocated during this call
+// - All string pointers passed to the callback are temporary and only valid during that invocation
+// - The callback must copy string data (e.g., via Marshal.PtrToStringUTF8) and byte arrays (IP, host ID) immediately.
+// - The callback must not throw exceptions; use Environment.FailFast on errors
 #[unsafe(no_mangle)]
 pub extern "C" fn cluster_state_fill_nodes(
     cluster_state_ptr: BridgedBorrowedSharedPtr<'_, ClusterState>,
@@ -116,5 +156,178 @@ pub extern "C" fn cluster_state_fill_nodes(
         unsafe {
             callback(list_ptr, ip_bytes, port, dc, rack, host_id_bytes);
         }
+    }
+}
+
+struct RustReplicaBridge<'a> {
+    cluster_state: &'a ClusterState,
+    keyspace: CSharpStr<'a>,
+    table: Option<CSharpStr<'a>>,
+    token: Token,
+}
+
+impl<'a> RustReplicaBridge<'a> {
+    fn pre_serialized_values_from(
+        partition_key_ptr: CsharpValuePtr,
+        partition_key_len: usize,
+    ) -> Result<PreSerializedValues, MetadataBridgeError> {
+        let mut psv = PreSerializedValues::new();
+        let csharp_val = CsharpSerializedValue::new(partition_key_ptr, partition_key_len);
+        psv.add_value(csharp_val)?;
+        Ok(psv)
+    }
+
+    // Helper: call the provided FFI callback for each replica in `replicas`.
+    fn callback_foreach_replica(
+        replicas: Vec<(Arc<Node>, Shard)>,
+        callback_state: CallbackState,
+        callback: OnReplicaPair,
+    ) {
+        replicas.into_iter().for_each(|(node, shard)| {
+            let host_id_bytes = node.host_id.as_bytes();
+            unsafe {
+                callback(callback_state, host_id_bytes.as_ptr(), shard as i32);
+            }
+        });
+    }
+
+    fn new_with_table(
+        cluster_state_ptr: BridgedBorrowedSharedPtr<'a, ClusterState>,
+        keyspace: CSharpStr<'a>,
+        table: CSharpStr<'a>,
+        partition_key_ptr: CsharpValuePtr,
+        partition_key_len: usize,
+    ) -> Result<Self, MetadataBridgeError> {
+        let cluster_state =
+            ArcFFI::as_ref(cluster_state_ptr).expect("valid and non-null ClusterState pointer");
+
+        let keyspace_name = keyspace
+            .as_cstr()
+            .ok_or(MetadataBridgeError::NullString("keyspace"))?
+            .to_str()?;
+        let table_name = table
+            .as_cstr()
+            .ok_or(MetadataBridgeError::NullString("table"))?
+            .to_str()?;
+
+        let psv = Self::pre_serialized_values_from(partition_key_ptr, partition_key_len)?;
+
+        let token = cluster_state.compute_token_preserialized(
+            keyspace_name,
+            table_name,
+            &psv.into_serialized_values(),
+        )?;
+
+        Ok(Self {
+            cluster_state,
+            keyspace,
+            table: Some(table),
+            token,
+        })
+    }
+
+    fn new_with_partitioner(
+        cluster_state_ptr: BridgedBorrowedSharedPtr<'a, ClusterState>,
+        keyspace: CSharpStr<'a>,
+        partition_key_ptr: CsharpValuePtr,
+        partition_key_len: usize,
+        partitioner: PartitionerName,
+    ) -> Result<Self, MetadataBridgeError> {
+        let cluster_state =
+            ArcFFI::as_ref(cluster_state_ptr).expect("valid and non-null ClusterState pointer");
+
+        let _ = keyspace
+            .as_cstr()
+            .ok_or(MetadataBridgeError::NullString("keyspace"))?
+            .to_str()?;
+
+        let psv = Self::pre_serialized_values_from(partition_key_ptr, partition_key_len)?;
+        let serialized_values = psv.into_serialized_values();
+
+        let token = cluster_state
+            .compute_token_preserialized_with_partitioner(&partitioner, &serialized_values)?;
+
+        Ok(Self {
+            cluster_state,
+            keyspace,
+            table: None,
+            token,
+        })
+    }
+
+    fn get_replicas(&self, callback_state: CallbackState, callback: OnReplicaPair) {
+        let keyspace_name = self
+            .keyspace
+            .as_cstr()
+            .expect("keyspace null")
+            .to_str()
+            .expect("keyspace utf8");
+        let table_name = self
+            .table
+            .as_ref()
+            .map(|t| {
+                t.as_cstr()
+                    .expect("table null")
+                    .to_str()
+                    .expect("table utf8")
+            })
+            .unwrap_or("");
+
+        let replicas =
+            self.cluster_state
+                .get_token_endpoints(keyspace_name, table_name, self.token);
+        Self::callback_foreach_replica(replicas, callback_state, callback);
+    }
+}
+
+/// For now unused - get replicas for a specific table and partition key.
+/// It should allow us to seamlessly support tablet-aware replica retrieval in the future.
+/// TODO: extend the C# Metadata.GetReplicas to accept the table name as a parameter.
+#[unsafe(no_mangle)]
+pub extern "C" fn cluster_state_get_replicas(
+    cluster_state_ptr: BridgedBorrowedSharedPtr<'_, ClusterState>,
+    keyspace: CSharpStr<'_>,
+    table: CSharpStr<'_>,
+    partition_key_ptr: CsharpValuePtr,
+    partition_key_len: usize,
+    callback_state: CallbackState,
+    callback: OnReplicaPair,
+) -> FfiError {
+    match RustReplicaBridge::new_with_table(
+        cluster_state_ptr,
+        keyspace,
+        table,
+        partition_key_ptr,
+        partition_key_len,
+    ) {
+        Ok(bridge) => {
+            bridge.get_replicas(callback_state, callback);
+            FfiError::ok()
+        }
+        Err(e) => crate::ffi_error_from_err(e),
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn cluster_state_get_replicas_murmur3(
+    cluster_state_ptr: BridgedBorrowedSharedPtr<'_, ClusterState>,
+    keyspace: CSharpStr<'_>,
+    partition_key_ptr: CsharpValuePtr,
+    partition_key_len: usize,
+    callback_state: CallbackState,
+    callback: OnReplicaPair,
+) -> FfiError {
+    match RustReplicaBridge::new_with_partitioner(
+        cluster_state_ptr,
+        keyspace,
+        partition_key_ptr,
+        partition_key_len,
+        PartitionerName::Murmur3,
+    ) {
+        Ok(bridge) => {
+            bridge.get_replicas(callback_state, callback);
+            FfiError::ok()
+        }
+        Err(e) => crate::ffi_error_from_err(e),
     }
 }

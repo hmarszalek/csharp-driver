@@ -11,7 +11,7 @@ use crate::CSharpStr;
 use crate::error_conversion::MaybeShutdownError;
 use crate::ffi::{
     ArcFFI, BoxFFI, BridgedBorrowedSharedPtr, BridgedOwnedExclusivePtr, BridgedOwnedSharedPtr, FFI,
-    FromArc,
+    FFIStr, FromArc,
 };
 use crate::pre_serialized_values::pre_serialized_values::PreSerializedValues;
 use crate::prepared_statement::BridgedPreparedStatement;

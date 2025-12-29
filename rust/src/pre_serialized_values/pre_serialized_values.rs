@@ -40,14 +40,14 @@ pub struct PreSerializedValues {
 }
 
 impl PreSerializedValues {
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self {
             serialized_values: SerializedValues::new(),
         }
     }
 
     /// Consume and return the inner SerializedValues.
-    pub fn into_serialized_values(self) -> SerializedValues {
+    pub(crate) fn into_serialized_values(self) -> SerializedValues {
         self.serialized_values
     }
 
@@ -58,7 +58,7 @@ impl PreSerializedValues {
     ///   of this call. The data is copied into the internal buffer immediately.
     /// - If `value.len > 0`, then `value.ptr` must be non-null and point to at least `len`
     ///   bytes of initialized memory.
-    pub(super) unsafe fn add_value(
+    pub(crate) fn add_value(
         &mut self,
         value: CsharpSerializedValue,
     ) -> Result<(), SerializationError> {
@@ -66,12 +66,12 @@ impl PreSerializedValues {
         self.serialized_values.add_value(&cell, dummy_column_type())
     }
 
-    pub(super) fn add_null(&mut self) -> Result<(), SerializationError> {
+    pub(crate) fn add_null(&mut self) -> Result<(), SerializationError> {
         let cell = PreSerializedCell::Null;
         self.serialized_values.add_value(&cell, dummy_column_type())
     }
 
-    pub(super) fn add_unset(&mut self) -> Result<(), SerializationError> {
+    pub(crate) fn add_unset(&mut self) -> Result<(), SerializationError> {
         let cell = PreSerializedCell::Unset;
         self.serialized_values.add_value(&cell, dummy_column_type())
     }

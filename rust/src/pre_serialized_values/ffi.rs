@@ -2,7 +2,6 @@ use super::csharp_memory::{CsharpSerializedValue, CsharpValuePtr};
 use super::pre_serialized_values::PreSerializedValues;
 use crate::FfiError;
 use crate::ffi::{BoxFFI, BridgedBorrowedExclusivePtr, BridgedOwnedExclusivePtr};
-use std::ffi::CString;
 
 // TODO: consider moving to pre_serialized_values/pre_serialized_values.rs
 
@@ -21,25 +20,24 @@ pub unsafe extern "C" fn pre_serialized_values_add_value(
     value_ptr: CsharpValuePtr,
     value_len: usize,
 ) -> FfiError {
-    let Some(values) = BoxFFI::as_mut_ref(values_ptr) else {
-        return FfiError::new(
-            1,
-            CString::new("invalid PreSerializedValues pointer in pre_serialized_values_add_value")
-                .unwrap(),
-        );
-    };
+    // Validate and obtain mutable reference to PreSerializedValues
+    let values = crate::ffi_try!(
+        BoxFFI::as_mut_ref(values_ptr).ok_or(
+            "invalid PreSerializedValues pointer in pre_serialized_values_add_value".to_string()
+        ),
+        1,
+        "invalid PreSerializedValues pointer in pre_serialized_values_add_value: {}"
+    );
+
+    // Build the C# serialized value and add it
     let value = CsharpSerializedValue::new(value_ptr, value_len);
-    match unsafe { values.add_value(value) } {
-        Ok(()) => FfiError::ok(),
-        Err(e) => {
-            let msg = format!("failed to add value: {e}");
-            FfiError::new(
-                1,
-                CString::new(msg)
-                    .unwrap_or_else(|_| CString::new("invalid utf8 in error").unwrap()),
-            )
-        }
-    }
+    crate::ffi_try!(
+        unsafe { values.add_value(value) }.map_err(|e| format!("failed to add value: {}", e)),
+        1,
+        "failed to add value: {}"
+    );
+
+    FfiError::ok()
 }
 
 /// Adds a null cell to the builder.
@@ -47,24 +45,21 @@ pub unsafe extern "C" fn pre_serialized_values_add_value(
 pub extern "C" fn pre_serialized_values_add_null(
     values_ptr: BridgedBorrowedExclusivePtr<'_, PreSerializedValues>,
 ) -> FfiError {
-    let Some(values) = BoxFFI::as_mut_ref(values_ptr) else {
-        return FfiError::new(
-            1,
-            CString::new("invalid PreSerializedValues pointer in pre_serialized_values_add_null")
-                .unwrap(),
-        );
-    };
-    match values.add_null() {
-        Ok(()) => FfiError::ok(),
-        Err(e) => {
-            let msg = format!("failed to add null: {e}");
-            FfiError::new(
-                1,
-                CString::new(msg)
-                    .unwrap_or_else(|_| CString::new("invalid utf8 in error").unwrap()),
-            )
-        }
-    }
+    let values = crate::ffi_try!(
+        BoxFFI::as_mut_ref(values_ptr).ok_or(
+            "invalid PreSerializedValues pointer in pre_serialized_values_add_null".to_string()
+        ),
+        1,
+        "invalid PreSerializedValues pointer in pre_serialized_values_add_null: {}"
+    );
+    crate::ffi_try!(
+        values
+            .add_null()
+            .map_err(|e| format!("failed to add null: {}", e)),
+        1,
+        "failed to add null: {}"
+    );
+    FfiError::ok()
 }
 
 /// Adds an unset cell to the builder.
@@ -72,24 +67,21 @@ pub extern "C" fn pre_serialized_values_add_null(
 pub extern "C" fn pre_serialized_values_add_unset(
     values_ptr: BridgedBorrowedExclusivePtr<'_, PreSerializedValues>,
 ) -> FfiError {
-    let Some(values) = BoxFFI::as_mut_ref(values_ptr) else {
-        return FfiError::new(
-            1,
-            CString::new("invalid PreSerializedValues pointer in pre_serialized_values_add_unset")
-                .unwrap(),
-        );
-    };
-    match values.add_unset() {
-        Ok(()) => FfiError::ok(),
-        Err(e) => {
-            let msg = format!("failed to add unset: {e}");
-            FfiError::new(
-                1,
-                CString::new(msg)
-                    .unwrap_or_else(|_| CString::new("invalid utf8 in error").unwrap()),
-            )
-        }
-    }
+    let values = crate::ffi_try!(
+        BoxFFI::as_mut_ref(values_ptr).ok_or(
+            "invalid PreSerializedValues pointer in pre_serialized_values_add_unset".to_string()
+        ),
+        1,
+        "invalid PreSerializedValues pointer in pre_serialized_values_add_unset: {}"
+    );
+    crate::ffi_try!(
+        values
+            .add_unset()
+            .map_err(|e| format!("failed to add unset: {}", e)),
+        1,
+        "failed to add unset: {}"
+    );
+    FfiError::ok()
 }
 
 /// Frees the PreSerializedValues if it was not consumed by a query.

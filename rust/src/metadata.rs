@@ -1,7 +1,32 @@
+use crate::CSharpStr;
+use crate::FfiError;
 use crate::ffi::{ArcFFI, BridgedBorrowedSharedPtr, BridgedOwnedSharedPtr, FFI, FromArc};
-use scylla::cluster::ClusterState;
-use std::ffi::{c_char, c_void};
+use crate::pre_serialized_values::csharp_memory::{CsharpSerializedValue, CsharpValuePtr};
+use crate::pre_serialized_values::pre_serialized_values::PreSerializedValues;
+use scylla::cluster::{ClusterState, Node};
+use scylla::errors::ClusterStateTokenError;
+use scylla::routing::{Shard, Token};
+use std::ffi::{CString, c_char, c_void};
 use std::sync::Arc;
+
+// Helper macro: evaluate an expression that returns Result<T, E>. On Ok(v) yield v.
+// On Err(e) format the provided message template with the error and return an FfiError
+// with the provided numeric code.
+// Usage: ffi_try!(expr, 1, "failed to compute token: {}")
+macro_rules! ffi_try {
+    ($expr:expr, $code:expr, $fmt:expr) => {
+        match $expr {
+            Ok(v) => v,
+            Err(e) => {
+                let msg = format!($fmt, e);
+                return FfiError::new(
+                    $code,
+                    CString::new(msg).unwrap_or_else(|_| CString::new("error").unwrap()),
+                );
+            }
+        }
+    };
+}
 
 pub struct BridgedClusterState {
     pub(crate) inner: Arc<ClusterState>,
@@ -40,6 +65,9 @@ type ConstructCSharpHost = unsafe extern "C" fn(
     rack_len: usize,
     host_id_bytes_ptr: *const u8,
 );
+
+type OnReplicaPair =
+    unsafe extern "C" fn(callback_state: *mut c_void, host_id_bytes_ptr: *const u8, shard: i32);
 
 #[unsafe(no_mangle)]
 pub extern "C" fn cluster_state_fill_nodes(
@@ -111,4 +139,88 @@ pub extern "C" fn cluster_state_fill_nodes(
             );
         }
     }
+}
+
+impl BridgedClusterState {
+    fn _compute_token(
+        &self,
+        keyspace: &str,
+        table: &str,
+        pre_serialized_partition_key: PreSerializedValues,
+    ) -> Result<Token, ClusterStateTokenError> {
+        // Use non-consuming accessor to avoid moving out of borrowed PreSerializedValues
+        self.inner.compute_token_preserialized(
+            keyspace,
+            table,
+            &(pre_serialized_partition_key.into_serialized_values()),
+        )
+    }
+
+    fn _get_token_endpoints(
+        &self,
+        keyspace: &str,
+        table: &str,
+        pre_serialized_partition_key: PreSerializedValues,
+    ) -> Result<Vec<(Arc<Node>, Shard)>, ClusterStateTokenError> {
+        let token = self._compute_token(keyspace, table, pre_serialized_partition_key)?;
+        Ok(self.inner.get_token_endpoints(keyspace, table, token))
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn cluster_state_get_replicas(
+    cluster_state_ptr: BridgedBorrowedSharedPtr<'_, BridgedClusterState>,
+    keyspace: CSharpStr<'_>,
+    table: CSharpStr<'_>,
+    partition_key_ptr: CsharpValuePtr,
+    partition_key_len: usize,
+    callback_state: *mut c_void,
+    callback: OnReplicaPair,
+) -> FfiError {
+    // Validate cluster_state pointer (use macro)
+    let bridged_cluster_state = ffi_try!(
+        ArcFFI::as_ref(cluster_state_ptr).ok_or_else(|| "invalid ClusterState pointer".to_string()),
+        1,
+        "invalid ClusterState pointer: {}"
+    );
+
+    // Parse keyspace (C# ensures pointer validity) and use macro for UTF-8 error
+    let keyspace_cstr = keyspace.as_cstr().unwrap();
+    let keyspace_name = ffi_try!(keyspace_cstr.to_str(), 1, "invalid keyspace string: {}");
+
+    // Parse table (C# ensures pointer validity) and use macro for UTF-8 error
+    let table_cstr = table.as_cstr().unwrap();
+    let table_name = ffi_try!(table_cstr.to_str(), 1, "invalid table string: {}");
+
+    // Build PreSerializedValues locally and add the C# buffer as a single blob; use macro
+    let psv = ffi_try!(
+        {
+            let mut _psv = PreSerializedValues::new();
+            let csharp_val = CsharpSerializedValue::new(partition_key_ptr, partition_key_len);
+            // psv.add_value returns Result<(), SerializationError>
+            match _psv.add_value(csharp_val) {
+                Ok(()) => Ok(_psv),
+                Err(e) => Err(e),
+            }
+        },
+        1,
+        "failed to add pre-serialized partition key: {}"
+    );
+
+    // Get replicas using owned PreSerializedValues (moved into function)
+    let replicas = ffi_try!(
+        bridged_cluster_state._get_token_endpoints(keyspace_name, table_name, psv),
+        1,
+        "failed to compute token: {}"
+    );
+
+    // Call the callback for each replica
+    for (node, shard) in replicas {
+        let host_id_bytes = node.host_id.as_bytes();
+        unsafe {
+            callback(callback_state, host_id_bytes.as_ptr(), shard as i32);
+        }
+    }
+
+    FfiError::ok()
 }

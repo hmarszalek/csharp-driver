@@ -266,7 +266,7 @@ namespace Cassandra
     /// <summary>
     /// Table of exception constructors passed to Rust via TCB.
     /// Rust reads constructors from this table to build managed exceptions.
-    /// Any changes to this struct must be mirrored in RustBridgeGlobals 
+    /// Any changes to this struct must be mirrored in RustBridgeGlobals
     /// and in Rust code in the exact same order (alphabetical).
     /// </summary>
     [StructLayout(LayoutKind.Sequential)]

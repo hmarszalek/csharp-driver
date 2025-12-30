@@ -71,6 +71,7 @@ namespace Cassandra
         private static readonly Logger Logger = new Logger(typeof(Session));
         private readonly ICluster _cluster;
         private int _disposed;
+        private readonly ReaderWriterLockSlim _lock = new ReaderWriterLockSlim();
 
         public int BinaryProtocolVersion => 4;
 
@@ -252,19 +253,31 @@ namespace Cassandra
                 return Task.FromResult<object>(null);
             }
 
-            // FIXME: Actually perform shutdown.
-            // Remember to dequeue from Cluster's sessions list.
+            // Acquire write lock to ensure no queries are executing
+            // This will wait for all read locks (queries) to complete
+            // and prevent new queries from starting
+            return Task.Run(() =>
+            {
+                _lock.EnterWriteLock();
+                try
+                {
+                    // FIXME: Actually perform shutdown.
+                    // Remember to dequeue from Cluster's sessions list.
 
-            // Dispose the session handle which will call session_free in Rust.
-            try
-            {
-                return Task.Run(() => Dispose());
-            }
-            catch (Exception ex)
-            {
-                Session.Logger.Error($"Failed to dispose session during shutdown: {ex}");
-                throw;
-            }
+                    // Dispose the session handle which will call session_free in Rust.
+                    Dispose();
+                }
+                catch (Exception ex)
+                {
+                    Session.Logger.Error($"Failed to dispose session during shutdown: {ex}");
+                    throw;
+                }
+                finally
+                {
+                    _lock.ExitWriteLock();
+                    _lock.Dispose();
+                }
+            });
         }
 
         /// <inheritdoc />
@@ -336,83 +349,115 @@ namespace Cassandra
             switch (statement)
             {
                 case RegularStatement s:
-                    string queryString = s.QueryString;
-                    object[] queryValues = s.QueryValues ?? [];
-
-                    // Check if this is a USE statement to track keyspace changes.
-                    // TODO: perform whole logic related to USE statements on the Rust side.
-                    bool isUseStatement = IsUseKeyspace(queryString, out string newKeyspace);
-
-                    TaskCompletionSource<IntPtr> tcs = new(TaskCreationOptions.RunContinuationsAsynchronously);
-                    Tcb tcb = Tcb.WithTcs(tcs);
-
-                    if (queryValues.Length == 0)
+                    // Check if the session is disposed and if it isn't try to acquire a read lock.
+                    // If we can't acquire the lock immediately, it means the session is currently being disposed.
+                    // After acquiring the read lock, we can be sure the session won't be disposed while in use.
+                    if (IsDisposed || _lock.TryEnterReadLock(0) == false)
                     {
-                        // Use session_use_keyspace for USE statements and session_query for other statements.
+                        throw new ObjectDisposedException("Session has been disposed or is shutting down");
+                    }
+
+                    try
+                    {
+                        string queryString = s.QueryString;
+                        object[] queryValues = s.QueryValues ?? [];
+
+                        // Check if this is a USE statement to track keyspace changes.
                         // TODO: perform whole logic related to USE statements on the Rust side.
-                        if (isUseStatement)
+                        bool isUseStatement = IsUseKeyspace(queryString, out string newKeyspace);
+
+                        TaskCompletionSource<IntPtr> tcs = new(TaskCreationOptions.RunContinuationsAsynchronously);
+                        Tcb tcb = Tcb.WithTcs(tcs);
+
+                        if (queryValues.Length == 0)
                         {
-                            // For USE statements, call the dedicated use_keyspace method
-                            // case_sensitive = 1 (true) to respect the exact casing provided.
-                            session_use_keyspace(tcb, handle, newKeyspace, 1);
+                            // Use session_use_keyspace for USE statements and session_query for other statements.
+                            // TODO: perform whole logic related to USE statements on the Rust side.
+                            if (isUseStatement)
+                            {
+                                // For USE statements, call the dedicated use_keyspace method
+                                // case_sensitive = 1 (true) to respect the exact casing provided.
+                                session_use_keyspace(tcb, handle, newKeyspace, 1);
+                            }
+                            else
+                            {
+                                session_query(tcb, handle, queryString);
+                            }
                         }
                         else
                         {
-                            session_query(tcb, handle, queryString);
+                            //TODO: abstract value serialization and the Rust-native function out of here
+                            session_query_with_values(
+                                tcb,
+                                handle,
+                                queryString,
+                                SerializationHandler.InitializeSerializedValues(queryValues).TakeNativeHandle()
+                            );
                         }
-                    }
-                    else
-                    {
-                        //TODO: abstract value serialization and the Rust-native function out of here
-                        session_query_with_values(
-                            tcb,
-                            handle,
-                            queryString,
-                            SerializationHandler.InitializeSerializedValues(queryValues).TakeNativeHandle()
-                        );
-                    }
 
-                    return tcs.Task.ContinueWith(t =>
-                    {
-                        IntPtr rowSetPtr = t.Result;
-                        var rowSet = new RowSet(rowSetPtr);
-
-                        // TODO: Fix this logic once we have proper USE statement handling in the driver. Make sure no race conditions occur when updating the keyspace
-                        if (isUseStatement)
+                        return tcs.Task.ContinueWith(t =>
                         {
-                            _keyspace = newKeyspace;
-                        }
+                            IntPtr rowSetPtr = t.Result;
+                            var rowSet = new RowSet(rowSetPtr);
 
-                        return rowSet;
-                    }, TaskContinuationOptions.ExecuteSynchronously);
+                            // TODO: Fix this logic once we have proper USE statement handling in the driver. Make sure no race conditions occur when updating the keyspace
+                            if (isUseStatement)
+                            {
+                                _keyspace = newKeyspace;
+                            }
+
+                            return rowSet;
+                        }, TaskContinuationOptions.ExecuteSynchronously);
+                    }
+                    finally
+                    {
+                        // Release the read lock.
+                        _lock.ExitReadLock();
+                    }
 
                 case BoundStatement bs:
-                    // Only support bound statements without values for now.
-                    TaskCompletionSource<IntPtr> boundTcs = new(TaskCreationOptions.RunContinuationsAsynchronously);
-                    Tcb boundTcb = Tcb.WithTcs(boundTcs);
-
-                    // The managed PreparedStatement object (and the BoundStatement that
-                    // references it) is rooted here by the local variable `bs`. Because there's an
-                    // active reference in this scope, the GC will not collect the managed object
-                    // while this method is executing — so the native resource under the pointer
-                    // is guaranteed to still exist for the duration of this call.
-                    IntPtr queryPrepared = bs.PreparedStatement.DangerousGetHandle();
-                    object[] queryValuesBound = bs.QueryValues ?? [];
-
-                    if (queryValuesBound.Length == 0)
+                    // Check if the session is disposed and if it isn't try to acquire a read lock.
+                    // If we can't acquire the lock immediately, it means the session is currently being disposed.
+                    // After acquiring the read lock, we can be sure the session won't be disposed while in use.
+                    if (IsDisposed || _lock.TryEnterReadLock(0) == false)
                     {
-                        session_query_bound(boundTcb, handle, queryPrepared);
-                    }
-                    else
-                    {
-                        throw new NotImplementedException("Bound statements with values are not yet supported");
+                        throw new ObjectDisposedException("Session has been disposed or is shutting down");
                     }
 
-                    return boundTcs.Task.ContinueWith(t =>
+                    try
                     {
-                        IntPtr rowSetPtr = t.Result;
-                        return new RowSet(rowSetPtr);
-                    }, TaskContinuationOptions.ExecuteSynchronously);
+                        // Only support bound statements without values for now.
+                        TaskCompletionSource<IntPtr> boundTcs = new(TaskCreationOptions.RunContinuationsAsynchronously);
+                        Tcb boundTcb = Tcb.WithTcs(boundTcs);
+
+                        // The managed PreparedStatement object (and the BoundStatement that
+                        // references it) is rooted here by the local variable `bs`. Because there's an
+                        // active reference in this scope, the GC will not collect the managed object
+                        // while this method is executing — so the native resource under the pointer
+                        // is guaranteed to still exist for the duration of this call.
+                        IntPtr queryPrepared = bs.PreparedStatement.DangerousGetHandle();
+                        object[] queryValuesBound = bs.QueryValues ?? [];
+
+                        if (queryValuesBound.Length == 0)
+                        {
+                            session_query_bound(boundTcb, handle, queryPrepared);
+                        }
+                        else
+                        {
+                            throw new NotImplementedException("Bound statements with values are not yet supported");
+                        }
+
+                        return boundTcs.Task.ContinueWith(t =>
+                        {
+                            IntPtr rowSetPtr = t.Result;
+                            return new RowSet(rowSetPtr);
+                        }, TaskContinuationOptions.ExecuteSynchronously);
+                    }
+                    finally
+                    {
+                        // Release the read lock.
+                        _lock.ExitReadLock();
+                    }
 
                 case BatchStatement s:
                     throw new NotImplementedException("Batches are not yet supported");
@@ -478,30 +523,46 @@ namespace Cassandra
         public Task<PreparedStatement> PrepareAsync(
             string cqlQuery, string keyspace, IDictionary<string, byte[]> customPayload)
         {
-            if (customPayload != null)
+            // Check if the session is disposed and if it isn't try to acquire a read lock.
+            // If we can't acquire the lock immediately, it means the session is currently being disposed.
+            // After acquiring the read lock, we can be sure the session won't be disposed while in use.
+            if (IsDisposed || _lock.TryEnterReadLock(0) == false)
             {
-                throw new NotSupportedException("Custom payload is not yet supported in Prepare");
+                throw new ObjectDisposedException("Session has been disposed or is shutting down");
             }
 
-            if (keyspace != null)
+            try
             {
-                throw new NotSupportedException($"Protocol version 4 does not support" +
-                                                " setting the keyspace as part of the PREPARE request");
+                if (customPayload != null)
+                {
+                    throw new NotSupportedException("Custom payload is not yet supported in Prepare");
+                }
+
+                if (keyspace != null)
+                {
+                    throw new NotSupportedException($"Protocol version 4 does not support" +
+                                                    " setting the keyspace as part of the PREPARE request");
+                }
+
+                TaskCompletionSource<IntPtr> tcs = new(TaskCreationOptions.RunContinuationsAsynchronously);
+                Tcb tcb = Tcb.WithTcs(tcs);
+
+                session_prepare(tcb, handle, cqlQuery);
+
+                return tcs.Task.ContinueWith(t =>
+                {
+                    IntPtr preparedStatementPtr = t.Result;
+                    // FIXME: Bridge with Rust to get variables metadata.
+                    RowSetMetadata variablesRowsMetadata = null;
+                    var ps = new PreparedStatement(preparedStatementPtr, cqlQuery, variablesRowsMetadata);
+                    return ps;
+                }, TaskContinuationOptions.ExecuteSynchronously);
             }
-
-            TaskCompletionSource<IntPtr> tcs = new(TaskCreationOptions.RunContinuationsAsynchronously);
-            Tcb tcb = Tcb.WithTcs(tcs);
-
-            session_prepare(tcb, handle, cqlQuery);
-
-            return tcs.Task.ContinueWith(t =>
+            finally
             {
-                IntPtr preparedStatementPtr = t.Result;
-                // FIXME: Bridge with Rust to get variables metadata.
-                RowSetMetadata variablesRowsMetadata = null;
-                var ps = new PreparedStatement(preparedStatementPtr, cqlQuery, variablesRowsMetadata);
-                return ps;
-            }, TaskContinuationOptions.ExecuteSynchronously);
+                // Release the read lock.
+                _lock.ExitReadLock();
+            }
         }
 
         public void WaitForSchemaAgreement(RowSet rs)
@@ -566,6 +627,25 @@ namespace Cassandra
             }
 
             return true;
+        }
+
+        /// <summary>
+        /// Tries to acquire a read lock on the session to prevent disposal during critical operations.
+        /// Operation won't block if the lock is not available, but instead will return false.
+        /// On returning true, caller must release it with ReleaseReadLock() in a finally block.
+        /// </summary>
+        internal bool TryAcquireReadLock()
+        {
+            return _lock.TryEnterReadLock(0);
+        }
+
+        /// <summary>
+        /// Releases the read lock on the session.
+        /// Must be called in a finally block after successful TryAcquireReadLock().
+        /// </summary>
+        internal void ReleaseReadLock()
+        {
+            _lock.ExitReadLock();
         }
     }
 }

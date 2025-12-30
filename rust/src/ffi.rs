@@ -148,7 +148,7 @@ impl<T: Sized, P: Properties> BridgedPtr<'_, T, P> {
 
 /// Conversion to raw pointer.
 impl<T: Sized, P: Properties> BridgedPtr<'_, T, P> {
-    fn to_raw(&self) -> Option<*mut T> {
+    pub(crate) fn to_raw(&self) -> Option<*mut T> {
         self.ptr.map(|ptr| ptr.as_ptr())
     }
 }

@@ -1,5 +1,6 @@
 pub mod ffi;
 mod logging;
+mod metadata;
 mod pre_serialized_values;
 mod prepared_statement;
 mod row_set;

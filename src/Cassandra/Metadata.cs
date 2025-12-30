@@ -21,6 +21,8 @@ using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
+using Cassandra.Collections;
+using Cassandra.Tasks;
 
 namespace Cassandra
 {
@@ -187,6 +189,7 @@ namespace Cassandra
             // No-op for now - metadata disposal not yet implemented
             // throw new NotImplementedException();
         }
+
 
         /// <summary>
         /// Returns the <see cref="Host"/> for the given address, using the most recent

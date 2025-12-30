@@ -129,7 +129,6 @@ namespace Cassandra
         {
             get
             {
-                // TaskHelper.WaitToComplete(Init()); FIXME
                 return _metadata;
             }
         }

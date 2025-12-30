@@ -86,6 +86,14 @@ namespace Cassandra
             // FIXME
         }
 
+        internal Host(IPEndPoint address, Guid hostId, string datacenter, string rack)
+        {
+            Address = address ?? throw new ArgumentNullException(nameof(address));
+            HostId = hostId;
+            Datacenter = datacenter;
+            Rack = rack;
+        }
+
         /// <summary>
         /// Sets the Host as Down.
         /// Returns false if it was already considered as Down by the driver.

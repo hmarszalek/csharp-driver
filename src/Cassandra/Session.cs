@@ -68,6 +68,9 @@ namespace Cassandra
         [DllImport("csharp_wrapper", CallingConvention = CallingConvention.Cdecl)]
         unsafe private static extern void session_use_keyspace(Tcb tcb, IntPtr session, [MarshalAs(UnmanagedType.LPUTF8Str)] string keyspace, int isCaseSensitive);
 
+        [DllImport("csharp_wrapper", CallingConvention = CallingConvention.Cdecl)]
+        private static extern IntPtr session_get_cluster_state(IntPtr sessionPtr);
+
         private static readonly Logger Logger = new Logger(typeof(Session));
         private readonly ICluster _cluster;
         private int _disposed;
@@ -562,6 +565,22 @@ namespace Cassandra
             }
 
             return true;
+        }
+
+        /// <summary>
+        /// Gets the ClusterState pointer from the Rust session.
+        /// The returned pointer is an FFI BridgedPtr and it transfers ownership to the caller in C#.
+        /// The caller MUST call cluster_state_free() exactly once for each returned pointer to avoid a memory leak.
+        /// Each call is expected to return a distinct pointer instance whose lifetime is now owned by the caller.
+        /// </summary>
+        internal IntPtr GetClusterStatePtr()
+        {
+            if (IsInvalid || IsDisposed)
+            {
+                throw new ObjectDisposedException("Session already disposed");
+            }
+
+            return session_get_cluster_state(handle);
         }
     }
 }

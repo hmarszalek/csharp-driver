@@ -2,6 +2,7 @@ use std::convert::Infallible;
 
 use scylla::client::session::Session;
 use scylla::client::session_builder::SessionBuilder;
+use scylla::cluster::ClusterState;
 use scylla::errors::{NewSessionError, PagerExecutionError, PrepareError};
 use scylla_cql::serialize::row::SerializedValues;
 use tokio::sync::RwLock;
@@ -388,4 +389,22 @@ pub extern "C" fn session_use_keyspace(
         tracing::trace!("[FFI] use_keyspace executed successfully");
         Ok(RowSet::empty())
     })
+}
+
+// Returns the current cluster state as an Arc-wrapped pointer.
+// This function provides access to the cluster topology information from the session.
+// The returned ClusterState is a snapshot at the time of the call.
+//
+// # Safety
+// - The session pointer must be valid and not freed
+// - Each returned pointer must be freed exactly once with `cluster_state_free`
+#[unsafe(no_mangle)]
+pub extern "C" fn session_get_cluster_state(
+    session_ptr: BridgedBorrowedSharedPtr<'_, BridgedSession>,
+) -> BridgedOwnedSharedPtr<ClusterState> {
+    let bridged_session =
+        ArcFFI::as_ref(session_ptr).expect("valid and non-null BridgedSession pointer");
+    let cluster_state = bridged_session.inner.get_cluster_state();
+
+    ArcFFI::into_ptr(cluster_state)
 }

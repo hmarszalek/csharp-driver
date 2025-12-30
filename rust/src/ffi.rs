@@ -212,6 +212,10 @@ impl<T: Sized> BridgedPtr<'_, T, Exclusive> {
     }
 }
 
+/*
+ * FFI traits and implementations - various ownership kinds
+ */
+
 mod origin_sealed {
     // This is a sealed trait - its whole purpose is to be unnameable.
     // This means we need to disable the check.
@@ -503,76 +507,118 @@ pub struct FromRef;
 impl<T> origin_sealed::FromRefSealed for T where T: FFI<Origin = FromRef> {}
 impl<T> RefFFI for T where T: FFI<Origin = FromRef> {}
 
-/// ```compile_fail,E0499
-/// # use csharp_wrapper::ffi::{BridgedOwnedExclusivePtr, BridgedBorrowedExclusivePtr, FFI, BoxFFI, FromBox};
-/// struct Foo;
-/// impl FFI for Foo {
-///     type Origin = FromBox;
-/// }
-///
-/// let mut ptr: BridgedOwnedExclusivePtr<Foo> = BoxFFI::into_ptr(Box::new(Foo));
-/// let borrowed_mut_ptr1: BridgedBorrowedExclusivePtr<Foo> = ptr.borrow_mut();
-/// let borrowed_mut_ptr2: BridgedBorrowedExclusivePtr<Foo> = ptr.borrow_mut();
-/// let mutref1 = BoxFFI::as_mut_ref(borrowed_mut_ptr2);
-/// let mutref2 = BoxFFI::as_mut_ref(borrowed_mut_ptr1);
-/// ```
-fn _test_box_ffi_cannot_have_two_mutable_references() {}
+mod tests {
+    /// ```compile_fail,E0499
+    /// # use csharp_wrapper::ffi::{BridgedOwnedExclusivePtr, BridgedBorrowedExclusivePtr, FFI, BoxFFI, FromBox};
+    /// struct Foo;
+    /// impl FFI for Foo {
+    ///     type Origin = FromBox;
+    /// }
+    ///
+    /// let mut ptr: BridgedOwnedExclusivePtr<Foo> = BoxFFI::into_ptr(Box::new(Foo));
+    /// let borrowed_mut_ptr1: BridgedBorrowedExclusivePtr<Foo> = ptr.borrow_mut();
+    /// let borrowed_mut_ptr2: BridgedBorrowedExclusivePtr<Foo> = ptr.borrow_mut();
+    /// let mutref1 = BoxFFI::as_mut_ref(borrowed_mut_ptr2);
+    /// let mutref2 = BoxFFI::as_mut_ref(borrowed_mut_ptr1);
+    /// ```
+    fn _test_box_ffi_cannot_have_two_mutable_references() {}
 
-/// ```compile_fail,E0502
-/// # use csharp_wrapper::ffi::{BridgedOwnedExclusivePtr, BridgedBorrowedSharedPtr, BridgedBorrowedExclusivePtr, FFI, BoxFFI, FromBox};
-/// struct Foo;
-/// impl FFI for Foo {
-///     type Origin = FromBox;
-/// }
-///
-/// let mut ptr: BridgedOwnedExclusivePtr<Fo> = BoxFFI::into_ptr(Box::new(Foo));
-/// let borrowed_mut_ptr: BridgedBorrowedExclusivePtr<Foo> = ptr.borrow_mut();
-/// let borrowed_ptr: BridgedBorrowedSharedPtr<Foo> = ptr.borrow();
-/// let immref = BoxFFI::as_ref(borrowed_ptr);
-/// let mutref = BoxFFI::as_mut_ref(borrowed_mut_ptr);
-/// ```
-fn _test_box_ffi_cannot_have_mutable_and_immutable_references_at_the_same_time() {}
+    /// ```compile_fail,E0502
+    /// # use csharp_wrapper::ffi::{BridgedOwnedExclusivePtr, BridgedBorrowedSharedPtr, BridgedBorrowedExclusivePtr, FFI, BoxFFI, FromBox};
+    /// struct Foo;
+    /// impl FFI for Foo {
+    ///     type Origin = FromBox;
+    /// }
+    ///
+    /// let mut ptr: BridgedOwnedExclusivePtr<Fo> = BoxFFI::into_ptr(Box::new(Foo));
+    /// let borrowed_mut_ptr: BridgedBorrowedExclusivePtr<Foo> = ptr.borrow_mut();
+    /// let borrowed_ptr: BridgedBorrowedSharedPtr<Foo> = ptr.borrow();
+    /// let immref = BoxFFI::as_ref(borrowed_ptr);
+    /// let mutref = BoxFFI::as_mut_ref(borrowed_mut_ptr);
+    /// ```
+    fn _test_box_ffi_cannot_have_mutable_and_immutable_references_at_the_same_time() {}
 
-/// ```compile_fail,E0505
-/// # use csharp_wrapper::ffi::{BridgedOwnedExclusivePtr, BridgedBorrowedSharedPtr, FFI, BoxFFI, FromBox};
-/// struct Foo;
-/// impl FFI for Foo {
-///     type Origin = FromBox;
-/// }
-///
-/// let ptr: BridgedOwnedExclusivePtr<Foo> = BoxFFI::into_ptr(Box::new(Foo));
-/// let borrowed_ptr: BridgedBorrowedSharedPtr<Foo> = ptr.borrow();
-/// BoxFFI::free(ptr);
-/// let immref = BoxFFI::as_ref(borrowed_ptr);
-/// ```
-fn _test_box_ffi_cannot_free_while_having_borrowed_pointer() {}
+    /// ```compile_fail,E0505
+    /// # use csharp_wrapper::ffi::{BridgedOwnedExclusivePtr, BridgedBorrowedSharedPtr, FFI, BoxFFI, FromBox};
+    /// struct Foo;
+    /// impl FFI for Foo {
+    ///     type Origin = FromBox;
+    /// }
+    ///
+    /// let ptr: BridgedOwnedExclusivePtr<Foo> = BoxFFI::into_ptr(Box::new(Foo));
+    /// let borrowed_ptr: BridgedBorrowedSharedPtr<Foo> = ptr.borrow();
+    /// BoxFFI::free(ptr);
+    /// let immref = BoxFFI::as_ref(borrowed_ptr);
+    /// ```
+    fn _test_box_ffi_cannot_free_while_having_borrowed_pointer() {}
 
-/// ```compile_fail,E0505
-/// # use csharp_wrapper::ffi::{BridgedOwnedSharedPtr, BridgedBorrowedSharedPtr, FFI, ArcFFI, FromArc};
-/// # use std::sync::Arc;
-/// struct Foo;
-/// impl FFI for Foo {
-///     type Origin = FromArc;
-/// }
-///
-/// let ptr: BridgedOwnedSharedPtr<Foo> = ArcFFI::into_ptr(Arc::new(Foo));
-/// let borrowed_ptr: BridgedBorrowedSharedPtr<Foo> = ptr.borrow();
-/// ArcFFI::free(ptr);
-/// let immref = ArcFFI::cloned_from_ptr(borrowed_ptr);
-/// ```
-fn _test_arc_ffi_cannot_clone_after_free() {}
+    /// ```compile_fail,E0505
+    /// # use csharp_wrapper::ffi::{BridgedOwnedSharedPtr, BridgedBorrowedSharedPtr, FFI, ArcFFI, FromArc};
+    /// # use std::sync::Arc;
+    /// struct Foo;
+    /// impl FFI for Foo {
+    ///     type Origin = FromArc;
+    /// }
+    ///
+    /// let ptr: BridgedOwnedSharedPtr<Foo> = ArcFFI::into_ptr(Arc::new(Foo));
+    /// let borrowed_ptr: BridgedBorrowedSharedPtr<Foo> = ptr.borrow();
+    /// ArcFFI::free(ptr);
+    /// let immref = ArcFFI::cloned_from_ptr(borrowed_ptr);
+    /// ```
+    fn _test_arc_ffi_cannot_clone_after_free() {}
 
-/// ```compile_fail,E0505
-/// # use csharp_wrapper::ffi::{BridgedBorrowedSharedPtr, FFI, ArcFFI, FromArc};
-/// # use std::sync::Arc;
-/// struct Foo;
-/// impl FFI for Foo {
-///     type Origin = FromArc;
-/// }
-///
-/// let arc = Arc::new(Foo);
-/// let borrowed_ptr: BridgedBorrowedSharedPtr<Foo> = ArcFFI::as_ptr(&arc);
-/// std::mem::drop(arc);
-/// let immref = ArcFFI::cloned_from_ptr(borrowed_ptr);
-/// ```
-fn _test_arc_ffi_cannot_dereference_borrowed_after_drop() {}
+    /// ```compile_fail,E0505
+    /// # use csharp_wrapper::ffi::{BridgedBorrowedSharedPtr, FFI, ArcFFI, FromArc};
+    /// # use std::sync::Arc;
+    /// struct Foo;
+    /// impl FFI for Foo {
+    ///     type Origin = FromArc;
+    /// }
+    ///
+    /// let arc = Arc::new(Foo);
+    /// let borrowed_ptr: BridgedBorrowedSharedPtr<Foo> = ArcFFI::as_ptr(&arc);
+    /// std::mem::drop(arc);
+    /// let immref = ArcFFI::cloned_from_ptr(borrowed_ptr);
+    /// ```
+    fn _test_arc_ffi_cannot_dereference_borrowed_after_drop() {}
+}
+
+/*
+ * Compound FFI types with length - byte slices and strings.
+ */
+
+/// Represents a byte slice passed over FFI from Rust to C#.
+/// SAFETY: `ptr` must be a valid pointer to a byte array of length `len`.
+#[repr(C)]
+pub struct FFIByteSlice<'a> {
+    ptr: BridgedBorrowedSharedPtr<'a, u8>,
+    len: usize,
+}
+
+impl<'a> FFIByteSlice<'a> {
+    pub(crate) fn new(slice: impl AsRef<[u8]>) -> Self {
+        let s = slice.as_ref();
+        let ptr = unsafe {
+            // SAFETY: slice.as_ptr() returns a valid reference to a byte slice.
+            // Lifetime is inherited from the slice reference, so it's safe to create
+            // a borrowed pointer with the same lifetime.
+            BridgedBorrowedSharedPtr::from_raw(s.as_ptr())
+        };
+        FFIByteSlice { ptr, len: s.len() }
+    }
+}
+
+/// Represents a string passed over FFI from Rust to C#.
+/// SAFETY: `slice` must be a valid pointer a UTF-8 encoded string with correctly set length.
+#[repr(transparent)]
+pub struct FFIStr<'a> {
+    slice: FFIByteSlice<'a>,
+}
+
+impl<'a> FFIStr<'a> {
+    pub(crate) fn new(s: impl AsRef<str>) -> Self {
+        Self {
+            slice: FFIByteSlice::new(s.as_ref().as_bytes()),
+        }
+    }
+}

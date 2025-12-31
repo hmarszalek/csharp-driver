@@ -82,13 +82,13 @@ namespace Cassandra
         unsafe private static extern int row_set_type_info_get_set_child(IntPtr typeInfoHandle, out IntPtr childHandle);
 
         [DllImport("csharp_wrapper", CallingConvention = CallingConvention.Cdecl)]
-        unsafe private static extern int row_set_type_info_get_udt_name(IntPtr typeInfoHandle, out IntPtr namePtr, out nuint nameLen, out IntPtr keyspacePtr, out nuint keyspaceLen);
+        unsafe private static extern int row_set_type_info_get_udt_name(IntPtr typeInfoHandle, out FFIString name, out FFIString keyspace);
 
         [DllImport("csharp_wrapper", CallingConvention = CallingConvention.Cdecl)]
         unsafe private static extern nuint row_set_type_info_get_udt_field_count(IntPtr typeInfoHandle);
 
         [DllImport("csharp_wrapper", CallingConvention = CallingConvention.Cdecl)]
-        unsafe private static extern int row_set_type_info_get_udt_field(IntPtr typeInfoHandle, nuint index, out IntPtr fieldNamePtr, out nuint fieldNameLen, out IntPtr fieldTypeHandle);
+        unsafe private static extern int row_set_type_info_get_udt_field(IntPtr typeInfoHandle, nuint index, out FFIString fieldName, out IntPtr fieldTypeHandle);
 
         [DllImport("csharp_wrapper", CallingConvention = CallingConvention.Cdecl)]
         unsafe private static extern int row_set_type_info_get_map_children(IntPtr typeInfoHandle, out IntPtr keyHandle, out IntPtr valueHandle);
@@ -231,17 +231,17 @@ namespace Cassandra
                         // For UDT: get name+keyspace and then the fields
                         unsafe
                         {
-                            if (row_set_type_info_get_udt_name(handle, out IntPtr udtNamePtr, out nuint udtNameLen, out IntPtr udtKsPtr, out nuint udtKsLen) != 0)
+                            if (row_set_type_info_get_udt_name(handle, out FFIString udtName, out FFIString udtKs) != 0)
                             {
-                                var name = (udtNamePtr == IntPtr.Zero || udtNameLen == 0) ? string.Empty : Marshal.PtrToStringUTF8(udtNamePtr, (int)udtNameLen);
-                                var ks = (udtKsPtr == IntPtr.Zero || udtKsLen == 0) ? string.Empty : Marshal.PtrToStringUTF8(udtKsPtr, (int)udtKsLen);
+                                var name = udtName.ToManagedString();
+                                var ks = udtKs.ToManagedString();
                                 var udtInfo = new UdtColumnInfo(name ?? "");
                                 nuint fcount = row_set_type_info_get_udt_field_count(handle);
                                 for (nuint i = 0; i < fcount; i++)
                                 {
-                                    if (row_set_type_info_get_udt_field(handle, i, out IntPtr fieldNamePtr, out nuint fieldNameLen, out IntPtr fieldTypeHandle) != 0)
+                                    if (row_set_type_info_get_udt_field(handle, i, out FFIString fieldName, out IntPtr fieldTypeHandle) != 0)
                                     {
-                                        var fname = (fieldNamePtr == IntPtr.Zero || fieldNameLen == 0) ? string.Empty : Marshal.PtrToStringUTF8(fieldNamePtr, (int)fieldNameLen);
+                                        var fname = fieldName.ToManagedString();
                                         var fcode = (ColumnTypeCode)row_set_type_info_get_code(fieldTypeHandle);
                                         var fInfo = BuildTypeInfoFromHandle(fieldTypeHandle, fcode);
                                         var desc = new ColumnDesc { Name = fname, TypeCode = fcode, TypeInfo = fInfo };
@@ -305,7 +305,7 @@ namespace Cassandra
             return columns;
         }
 
-        unsafe static readonly delegate* unmanaged[Cdecl]<IntPtr, nuint, IntPtr, nuint, IntPtr, nuint, IntPtr, nuint, byte, IntPtr, byte, void> setColumnMetaPtr = &SetColumnMeta;
+        unsafe static readonly delegate* unmanaged[Cdecl]<IntPtr, nuint, FFIString, FFIString, FFIString, byte, IntPtr, byte, void> setColumnMetaPtr = &SetColumnMeta;
 
         /// <summary>
         /// This shall be called by Rust code for each column.
@@ -314,12 +314,9 @@ namespace Cassandra
         private static void SetColumnMeta(
             IntPtr columnsPtr,
             nuint columnIndex,
-            IntPtr namePtr,
-            nuint nameLen,
-            IntPtr keyspacePtr,
-            nuint keyspaceLen,
-            IntPtr tablePtr,
-            nuint tableLen,
+            FFIString name,
+            FFIString keyspace,
+            FFIString table,
             byte typeCode,
             IntPtr typeInfoPtr,
             byte isFrozen
@@ -342,9 +339,9 @@ namespace Cassandra
                     if (index < 0 || index >= columns.Length) return;
 
                     var col = columns[index];
-                    col.Name = (namePtr == IntPtr.Zero || nameLen == 0) ? string.Empty : Marshal.PtrToStringUTF8(namePtr, (int)nameLen);
-                    col.Keyspace = (keyspacePtr == IntPtr.Zero || keyspaceLen == 0) ? string.Empty : Marshal.PtrToStringUTF8(keyspacePtr, (int)keyspaceLen);
-                    col.Table = (tablePtr == IntPtr.Zero || tableLen == 0) ? string.Empty : Marshal.PtrToStringUTF8(tablePtr, (int)tableLen);
+                    col.Name = name.ToManagedString();
+                    col.Keyspace = keyspace.ToManagedString();
+                    col.Table = table.ToManagedString();
                     col.TypeCode = (ColumnTypeCode)typeCode;
                     col.Index = index;
                     col.Type = MapTypeFromCode(col.TypeCode);
@@ -414,7 +411,7 @@ namespace Cassandra
             return new Row(values, Columns, columnIndexes);
         }
 
-        unsafe readonly static delegate* unmanaged[Cdecl]<IntPtr, IntPtr, nuint, IntPtr, IntPtr, nuint, void> deserializeValue = &DeserializeValue;
+        unsafe readonly static delegate* unmanaged[Cdecl]<IntPtr, IntPtr, nuint, IntPtr, FFIByteSlice, void> deserializeValue = &DeserializeValue;
 
         /// <summary>
         /// This shall be called by Rust code for each column in a row.
@@ -425,8 +422,7 @@ namespace Cassandra
             IntPtr valuesPtr,
             nuint valueIndex,
             IntPtr serializerPtr,
-            IntPtr frameSlicePtr,
-            nuint length
+            FFIByteSlice FFIframeSlice
         )
         {
             try
@@ -441,9 +437,9 @@ namespace Cassandra
                     // TODO: handle deserialize exceptions.
 
                     // TODO: reuse the frameSlice buffer.
-                    var frameSlice = new byte[length];
-                    Marshal.Copy(frameSlicePtr, frameSlice, 0, (int)length);
-                    values[valueIndex] = serializer.Deserialize(ProtocolVersion.V4, frameSlice, 0, (int)length, column.TypeCode, column.TypeInfo);
+                    var frameSlice = FFIframeSlice.ToSpan().ToArray();
+                    int length = frameSlice.Length;
+                    values[valueIndex] = serializer.Deserialize(ProtocolVersion.V4, frameSlice, 0, length, column.TypeCode, column.TypeInfo);
                 }
                 else
                 {

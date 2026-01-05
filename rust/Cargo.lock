@@ -730,7 +730,7 @@ checksum = "94143f37725109f92c262ed2cf5e59bce7498c01bcc1502d7b9afe439a4e9f49"
 [[package]]
 name = "scylla"
 version = "1.4.1"
-source = "git+https://github.com/scylladb-zpp-2025-csharp-rs-driver/scylla-rust-driver.git?branch=main#39435a7e34a140c3f51c181f85a4498fcca2b571"
+source = "git+https://github.com/phalat24/scylla-rust-driver.git?branch=add-compute-token-preserialized#7f5cf3ba49eb9afb50a64a2e0d2c83fd35892480"
 dependencies = [
  "arc-swap",
  "async-trait",
@@ -754,7 +754,7 @@ dependencies = [
 [[package]]
 name = "scylla-cql"
 version = "1.4.0"
-source = "git+https://github.com/scylladb-zpp-2025-csharp-rs-driver/scylla-rust-driver.git?branch=main#39435a7e34a140c3f51c181f85a4498fcca2b571"
+source = "git+https://github.com/phalat24/scylla-rust-driver.git?branch=add-compute-token-preserialized#7f5cf3ba49eb9afb50a64a2e0d2c83fd35892480"
 dependencies = [
  "byteorder",
  "bytes",
@@ -773,7 +773,7 @@ dependencies = [
 [[package]]
 name = "scylla-macros"
 version = "1.4.0"
-source = "git+https://github.com/scylladb-zpp-2025-csharp-rs-driver/scylla-rust-driver.git?branch=main#39435a7e34a140c3f51c181f85a4498fcca2b571"
+source = "git+https://github.com/phalat24/scylla-rust-driver.git?branch=add-compute-token-preserialized#7f5cf3ba49eb9afb50a64a2e0d2c83fd35892480"
 dependencies = [
  "darling",
  "proc-macro2",

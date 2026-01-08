@@ -23,7 +23,7 @@ namespace Cassandra.Serialization
     /// </summary>
     internal class SerializerManager : ISerializerManager
     {
-        internal static readonly ISerializerManager Default = new SerializerManager(ProtocolVersion.V1);
+        internal static readonly ISerializerManager Default = new SerializerManager(ProtocolVersion.V4);
 
         /// <summary>
         /// An instance of a buffer that represents the value Unset

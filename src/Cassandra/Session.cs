@@ -211,9 +211,6 @@ namespace Cassandra
         /// <inheritdoc />
         public void CreateKeyspaceIfNotExists(string keyspaceName, Dictionary<string, string> replication = null, bool durableWrites = true)
         {
-            // Note: This won't work with current Rust error handling, because we always throw RustException on any error,
-            // losing capability to catch specific exceptions like AlreadyExistsException.
-            // FIXME: Design a better error handling mechanism to allow this.
             try
             {
                 CreateKeyspace(keyspaceName, replication, durableWrites);
@@ -233,9 +230,6 @@ namespace Cassandra
         /// <inheritdoc />
         public void DeleteKeyspaceIfExists(string keyspaceName)
         {
-            // Note: This won't work with current Rust error handling, because we always throw RustException on any error,
-            // losing capability to catch specific exceptions like AlreadyExistsException.
-            // FIXME: Design a better error handling mechanism to allow this.
             try
             {
                 DeleteKeyspace(keyspaceName);

@@ -5,7 +5,8 @@ use scylla::frame::response::result::{ColumnType, NativeType};
 
 use crate::FfiPtr;
 use crate::ffi::{
-    ArcFFI, BridgedBorrowedSharedPtr, BridgedOwnedSharedPtr, FFI, FromArc, FromRef, RefFFI,
+    ArcFFI, BridgedBorrowedSharedPtr, BridgedOwnedSharedPtr, FFI, FFIByteSlice, FFIStr, FromArc,
+    FromRef, RefFFI,
 };
 use crate::task::BridgedFuture;
 
@@ -61,12 +62,9 @@ pub extern "C" fn row_set_get_columns_count(
 type SetMetadata = unsafe extern "C" fn(
     columns_ptr: ColumnsPtr,
     value_index: usize,
-    name_ptr: *const u8,
-    name_len: usize,
-    keyspace_ptr: *const u8,
-    keyspace_len: usize,
-    table_ptr: *const u8,
-    table_len: usize,
+    name: FFIStr<'_>,
+    keyspace: FFIStr<'_>,
+    table: FFIStr<'_>,
     type_code: u8,
     type_info_handle: BridgedBorrowedSharedPtr<'_, ColumnType<'_>>,
     is_frozen: u8,
@@ -91,22 +89,9 @@ pub extern "C" fn row_set_fill_columns_metadata(
 
     // Iterate column specs and call the metadata setter
     for (i, spec) in pager.column_specs().iter().enumerate() {
-        fn str_to_ptr_and_len(s: &str) -> (*const u8, usize) {
-            if s.is_empty() {
-                (std::ptr::null(), 0)
-            } else {
-                (s.as_ptr(), s.len())
-            }
-        }
-
-        let name = spec.name();
-        let (name_ptr, name_len) = str_to_ptr_and_len(name);
-
-        let ks = spec.table_spec().ks_name();
-        let (keyspace_ptr, keyspace_len) = str_to_ptr_and_len(ks);
-
-        let table = spec.table_spec().table_name();
-        let (table_ptr, table_len) = str_to_ptr_and_len(table);
+        let name = FFIStr::new(spec.name());
+        let keyspace = FFIStr::new(spec.table_spec().ks_name());
+        let table = FFIStr::new(spec.table_spec().table_name());
 
         let type_code = column_type_to_code(spec.typ());
 
@@ -138,12 +123,9 @@ pub extern "C" fn row_set_fill_columns_metadata(
             set_metadata(
                 columns_ptr,
                 i,
-                name_ptr,
-                name_len,
-                keyspace_ptr,
-                keyspace_len,
-                table_ptr,
-                table_len,
+                name,
+                keyspace,
+                table,
                 type_code,
                 type_info_handle,
                 is_frozen,
@@ -178,8 +160,7 @@ type DeserializeValue = unsafe extern "C" fn(
     values_ptr: ValuesPtr,
     value_index: usize,
     serializer_ptr: SerializerPtr,
-    frame_slice_ptr: *const u8,
-    length: usize,
+    frame_slice: FFIByteSlice<'_>,
 );
 
 #[unsafe(no_mangle)]
@@ -223,8 +204,7 @@ pub extern "C" fn row_set_next_row<'row_set>(
                             values_ptr,
                             value_index,
                             serializer_ptr,
-                            frame_slice.as_slice().as_ptr(),
-                            frame_slice.as_slice().len(),
+                            FFIByteSlice::new(frame_slice.as_slice()),
                         );
                     }
                 } else {
@@ -399,10 +379,8 @@ pub extern "C" fn row_set_type_info_get_tuple_field<'typ>(
 #[unsafe(no_mangle)]
 pub extern "C" fn row_set_type_info_get_udt_name(
     type_info_handle: BridgedBorrowedSharedPtr<'_, ColumnType<'_>>,
-    out_name_ptr: *mut *const u8,
-    out_name_len: *mut usize,
-    out_keyspace_ptr: *mut *const u8,
-    out_keyspace_len: *mut usize,
+    out_name: *mut FFIStr<'_>,
+    out_keyspace: *mut FFIStr<'_>,
 ) -> i32 {
     if type_info_handle.is_null() {
         return 0;
@@ -413,10 +391,10 @@ pub extern "C" fn row_set_type_info_get_udt_name(
         ColumnType::UserDefinedType { definition, .. } => {
             let name = definition.name.as_ref();
             let ks = definition.keyspace.as_ref();
-            unsafe { *out_name_ptr = name.as_ptr() };
-            unsafe { *out_name_len = name.len() };
-            unsafe { *out_keyspace_ptr = ks.as_ptr() };
-            unsafe { *out_keyspace_len = ks.len() };
+            unsafe {
+                out_name.write(FFIStr::new(name));
+                out_keyspace.write(FFIStr::new(ks));
+            }
             1
         }
         _ => 0,
@@ -442,8 +420,7 @@ pub extern "C" fn row_set_type_info_get_udt_field_count(
 pub extern "C" fn row_set_type_info_get_udt_field<'typ>(
     type_info_handle: BridgedBorrowedSharedPtr<'typ, ColumnType<'typ>>,
     index: usize,
-    out_field_name_ptr: *mut *const u8,
-    out_field_name_len: *mut usize,
+    out_field_name: *mut FFIStr<'typ>,
     out_field_type_handle: *mut BridgedBorrowedSharedPtr<'typ, ColumnType<'typ>>,
 ) -> i32 {
     if type_info_handle.is_null() {
@@ -453,14 +430,15 @@ pub extern "C" fn row_set_type_info_get_udt_field<'typ>(
     let type_info = RefFFI::as_ref(type_info_handle).unwrap();
     match type_info {
         ColumnType::UserDefinedType { definition, .. } => {
-            if out_field_type_handle.is_null() {
+            if out_field_type_handle.is_null() || out_field_name.is_null() {
                 return 0;
             }
             let Some((field_name, field_type)) = definition.field_types.get(index) else {
                 return 0;
             };
-            unsafe { *out_field_name_ptr = field_name.as_ptr() };
-            unsafe { *out_field_name_len = field_name.len() };
+            unsafe {
+                out_field_name.write(FFIStr::new(field_name.as_ref()));
+            }
             let child = field_type;
             let ptr = RefFFI::as_ptr(child);
             unsafe {

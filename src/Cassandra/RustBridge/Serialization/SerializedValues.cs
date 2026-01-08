@@ -14,9 +14,9 @@ namespace Cassandra
         // if the instance is disposed or finalized without having been consumed by a query.
         // Calling TakeNativeHandle() transfers ownership to the caller (and ultimately the native driver),
         // preventing the SafeHandle from freeing the resource.
-        internal SerializedValues() : base(IntPtr.Zero, true)
+        internal SerializedValues(ISerializer serializer) : base(IntPtr.Zero, true)
         {
-            _serializer = SerializerManager.Default.GetCurrentSerializer();
+            _serializer = serializer;
             var h = pre_serialized_values_new();
             if (h == IntPtr.Zero)
             {
@@ -85,7 +85,7 @@ namespace Cassandra
                 {
                     IntPtr valuePtr = (IntPtr)ptr;
                     UIntPtr valueLen = (UIntPtr)buf.Length;
-
+                    
                     FfiErrorHelpers.ExecuteAndThrowIfFails(() => pre_serialized_values_add_value(
                         handle,
                         valuePtr,

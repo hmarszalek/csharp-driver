@@ -1,10 +1,11 @@
 using System;
 using System.Collections.Generic;
+using Cassandra.Serialization;
 
 namespace Cassandra
 {
     /// <summary>
-    /// Virtualizes the whole serialization process for values to be passed to Rust FFI calls.
+    /// Orchestrates the whole serialization process for values to be passed to Rust FFI calls.
     /// </summary>
     internal static class SerializationHandler
     {
@@ -15,10 +16,11 @@ namespace Cassandra
         internal static ISerializedValues InitializeSerializedValues(IEnumerable<object> values)
         {
             ArgumentNullException.ThrowIfNull(values);
+            var serializer = SerializerManager.Default.GetCurrentSerializer();
 
             // Create the SerializedValues instance (which allocates the native container)
             // and populate it. If population fails, the instance is disposed, freeing the native memory immediately.
-            var serializedValues = new SerializedValues();
+            var serializedValues = new SerializedValues(serializer);
             try
             {
                 serializedValues.AddMany(values);

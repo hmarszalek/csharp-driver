@@ -47,6 +47,15 @@ impl CsharpSerializedValue {
     /// while the underlying C# memory has been freed or moved if the C# side
     /// unpinned it prematurely.
     pub(crate) unsafe fn as_slice(&self) -> &[u8] {
+        if self.len == 0 {
+            return &[];
+        }
+
+        debug_assert!(
+            !self.ptr.as_raw().is_null(),
+            "non-zero length with null pointer"
+        );
+
         unsafe { std::slice::from_raw_parts(self.ptr.as_raw(), self.len) }
     }
 }

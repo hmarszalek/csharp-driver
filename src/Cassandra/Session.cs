@@ -69,6 +69,9 @@ namespace Cassandra
         [DllImport("csharp_wrapper", CallingConvention = CallingConvention.Cdecl)]
         unsafe private static extern void session_query_bound(Tcb tcb, IntPtr session, IntPtr preparedStatement);
 
+        [DllImport("csharp_wrapper", CallingConvention = CallingConvention.Cdecl)]
+        unsafe private static extern void session_query_bound_with_values(Tcb tcb, IntPtr session, IntPtr preparedStatement, IntPtr valuesPtr);
+
         private static readonly Logger Logger = new Logger(typeof(Session));
         private readonly ICluster _cluster;
         private int _disposed;
@@ -396,13 +399,18 @@ namespace Cassandra
                     IntPtr queryPrepared = bs.PreparedStatement.DangerousGetHandle();
                     object[] queryValuesBound = bs.QueryValues ?? [];
 
-                    if (queryValuesBound == null || queryValuesBound.Length == 0)
+                    if (queryValuesBound.Length == 0)
                     {
                         session_query_bound(boundTcb, handle, queryPrepared);
                     }
                     else
                     {
-                        throw new NotImplementedException("Bound statements with values are not yet supported");
+                        session_query_bound_with_values(
+                            boundTcb,
+                            handle,
+                            queryPrepared,
+                            SerializationHandler.InitializeSerializedValues(queryValuesBound).TakeNativeHandle()
+                        );
                     }
 
                     return boundTcs.Task.ContinueWith(t =>

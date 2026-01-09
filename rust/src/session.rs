@@ -47,30 +47,6 @@ pub extern "C" fn session_free(session_ptr: BridgedOwnedSharedPtr<BridgedSession
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn session_prepare(
-    tcb: Tcb,
-    session_ptr: BridgedBorrowedSharedPtr<'_, BridgedSession>,
-    statement: CSharpStr<'_>,
-) {
-    // Convert the raw C string to a Rust string.
-    let statement = statement.as_cstr().unwrap().to_str().unwrap().to_owned();
-    let bridged_session = ArcFFI::cloned_from_ptr(session_ptr).unwrap();
-
-    tracing::trace!(
-        "[FFI] Scheduling statement for preparation: \"{}\"",
-        statement
-    );
-
-    BridgedFuture::spawn::<_, _, PrepareError>(tcb, async move {
-        tracing::debug!("[FFI] Preparing statement \"{}\"", statement);
-        let ps = bridged_session.inner.prepare(statement).await?;
-        tracing::trace!("[FFI] Statement prepared");
-
-        Ok(BridgedPreparedStatement { inner: ps })
-    })
-}
-
-#[unsafe(no_mangle)]
 pub extern "C" fn session_query(
     tcb: Tcb,
     session_ptr: BridgedBorrowedSharedPtr<'_, BridgedSession>,
@@ -142,6 +118,30 @@ pub extern "C" fn session_query_with_values(
 }
 
 #[unsafe(no_mangle)]
+pub extern "C" fn session_prepare(
+    tcb: Tcb,
+    session_ptr: BridgedBorrowedSharedPtr<'_, BridgedSession>,
+    statement: CSharpStr<'_>,
+) {
+    // Convert the raw C string to a Rust string.
+    let statement = statement.as_cstr().unwrap().to_str().unwrap().to_owned();
+    let bridged_session = ArcFFI::cloned_from_ptr(session_ptr).unwrap();
+
+    tracing::trace!(
+        "[FFI] Scheduling statement for preparation: \"{}\"",
+        statement
+    );
+
+    BridgedFuture::spawn::<_, _, PrepareError>(tcb, async move {
+        tracing::debug!("[FFI] Preparing statement \"{}\"", statement);
+        let ps = bridged_session.inner.prepare(statement).await?;
+        tracing::trace!("[FFI] Statement prepared");
+
+        Ok(BridgedPreparedStatement { inner: ps })
+    })
+}
+
+#[unsafe(no_mangle)]
 pub extern "C" fn session_query_bound(
     tcb: Tcb,
     session_ptr: BridgedBorrowedSharedPtr<'_, BridgedSession>,
@@ -165,6 +165,42 @@ pub extern "C" fn session_query_bound(
             pager: std::sync::Mutex::new(Some(query_pager)),
         })
     })
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn session_query_bound_with_values(
+    tcb: Tcb,
+    session_ptr: BridgedBorrowedSharedPtr<'_, BridgedSession>,
+    prepared_statement_ptr: BridgedBorrowedSharedPtr<'_, BridgedPreparedStatement>,
+    values_ptr: BridgedOwnedExclusivePtr<PreSerializedValues>,
+) {
+    // Take ownership of the pre-serialized values box so we can move it into the async task.
+    // Important: the order of operations here matters. We need to ensure we take ownership of the box first. In case any further operations panic,
+    // we don't want to leak the pointer.
+    // Note: this transfers ownership, so the C# side must not free it!
+    let values_box = BoxFFI::from_ptr(values_ptr).expect("non-null PreSerializedValues pointer");
+
+    let bridged_prepared = ArcFFI::cloned_from_ptr(prepared_statement_ptr).unwrap();
+    let bridged_session = ArcFFI::cloned_from_ptr(session_ptr).unwrap();
+
+    tracing::trace!("[FFI] Scheduling prepared statement execution");
+
+    BridgedFuture::spawn::<_, _, PagerExecutionError>(tcb, async move {
+        tracing::debug!("[FFI] Executing prepared statement");
+
+        // Convert our FFI wrapper into SerializedValues by consuming it.
+        let serialized_values: SerializedValues = values_box.into_serialized_values();
+
+        let query_pager = bridged_session
+            .inner
+            .execute_iter_preserialized(bridged_prepared.inner.clone(), serialized_values)
+            .await?;
+        tracing::trace!("[FFI] Prepared statement executed");
+
+        Ok(RowSet {
+            pager: std::sync::Mutex::new(Some(query_pager)),
+        })
+    });
 }
 
 // TO DO: Handle setting keyspace in session_query

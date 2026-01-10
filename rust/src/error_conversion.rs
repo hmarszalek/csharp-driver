@@ -196,6 +196,15 @@ impl InvalidQueryConstructor {
     }
 }
 
+// Special errors for C# wrapper.
+// In order to avoid warning about enum variant never being constructed use allow(dead_code).
+#[derive(Error, Debug, Clone)]
+#[allow(dead_code)]
+pub(crate) enum SessionShutdownError {
+    #[error("Something went wrong during session shutdown")]
+    SessionShutdown,
+}
+
 // Wrapper enum to represent errors that may occur normally or indicate that the session has been
 // shut down. It allows to return a clear error condition while satisfying the return type requirements.
 #[derive(Error, Debug, Clone)]
@@ -272,6 +281,17 @@ impl ErrorToException for NewSessionError {
                 }
             }
             _ => ctors.rust_exception_constructor.construct_from_rust(self), // TODO: convert errors to specific exceptions
+        }
+    }
+}
+
+// Specific mapping for SessionShutdownError
+impl ErrorToException for SessionShutdownError {
+    fn to_exception(&self, ctors: &ExceptionConstructors) -> ExceptionPtr {
+        match self {
+            SessionShutdownError::SessionShutdown => ctors
+                .rust_exception_constructor
+                .construct_from_rust("Something went wrong during session shutdown"),
         }
     }
 }

@@ -22,6 +22,21 @@ pub struct BridgedSession {
     inner: Session,
 }
 
+/// BridgedFuture currently needs to return some result that implements ArcFFI.
+/// For operations that don't need to return any data we use EmptyBridgedResult.
+/// The user must call empty_bridged_result_free after using such functions.
+#[derive(Debug)]
+pub struct EmptyBridgedResult;
+impl FFI for EmptyBridgedResult {
+    type Origin = FromArc;
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn empty_bridged_result_free(ptr: BridgedOwnedSharedPtr<EmptyBridgedResult>) {
+    ArcFFI::free(ptr);
+    tracing::trace!("[FFI] EmptyBridgedResult freed");
+}
+
 #[unsafe(no_mangle)]
 pub extern "C" fn session_create(tcb: Tcb, uri: CSharpStr<'_>) {
     // Convert the raw C string to a Rust string

@@ -335,92 +335,113 @@ namespace Cassandra
         /// <inheritdoc />
         public Task<RowSet> ExecuteAsync(IStatement statement, string executionProfileName)
         {
-            switch (statement)
+            bool refAdded = false;
+            try 
             {
-                case RegularStatement s:
-                    string queryString = s.QueryString;
-                    object[] queryValues = s.QueryValues ?? [];
+                // Temporarily increment SafeHandle's ref count to protect the native handle
+                // during the synchronous P/Invoke. Rust clones the underlying Arc
+                // synchronously inside the native call, so holding the SafeHandle ref only
+                // for the duration of the P/Invoke is sufficient. We release the ref
+                // immediately after the native call returns in the finally block.
+                // When the last ref is released (via DangerousRelease), any pending Dispose() will
+                // complete and call ReleaseHandle() to free the native session.
+                // This protects against the session trying to access the handle after it has been freed.
+                DangerousAddRef(ref refAdded);
 
-                    // Check if this is a USE statement to track keyspace changes.
-                    // TODO: perform whole logic related to USE statements on the Rust side.
-                    bool isUseStatement = IsUseKeyspace(queryString, out string newKeyspace);
+                switch (statement)
+                {
+                    case RegularStatement s:
+                        string queryString = s.QueryString;
+                        object[] queryValues = s.QueryValues ?? [];
 
-                    TaskCompletionSource<IntPtr> tcs = new(TaskCreationOptions.RunContinuationsAsynchronously);
-                    Tcb tcb = Tcb.WithTcs(tcs);
-
-                    if (queryValues.Length == 0)
-                    {
-                        // Use session_use_keyspace for USE statements and session_query for other statements.
+                        // Check if this is a USE statement to track keyspace changes.
                         // TODO: perform whole logic related to USE statements on the Rust side.
-                        if (isUseStatement)
+                        bool isUseStatement = IsUseKeyspace(queryString, out string newKeyspace);
+
+                        TaskCompletionSource<IntPtr> tcs = new(TaskCreationOptions.RunContinuationsAsynchronously);
+                        Tcb tcb = Tcb.WithTcs(tcs);
+
+                        if (queryValues.Length == 0)
                         {
-                            // For USE statements, call the dedicated use_keyspace method
-                            // case_sensitive = 1 (true) to respect the exact casing provided.
-                            session_use_keyspace(tcb, handle, newKeyspace, 1);
+                            // Use session_use_keyspace for USE statements and session_query for other statements.
+                            // TODO: perform whole logic related to USE statements on the Rust side.
+                            if (isUseStatement)
+                            {
+                                // For USE statements, call the dedicated use_keyspace method
+                                // case_sensitive = 1 (true) to respect the exact casing provided.
+                                session_use_keyspace(tcb, handle, newKeyspace, 1);
+                            }
+                            else
+                            {
+                                session_query(tcb, handle, queryString);
+                            }
                         }
                         else
                         {
-                            session_query(tcb, handle, queryString);
+                            //TODO: abstract value serialization and the Rust-native function out of here
+                            session_query_with_values(
+                                tcb,
+                                handle,
+                                queryString,
+                                SerializationHandler.InitializeSerializedValues(queryValues).TakeNativeHandle()
+                            );
                         }
-                    }
-                    else
-                    {
-                        //TODO: abstract value serialization and the Rust-native function out of here
-                        session_query_with_values(
-                            tcb,
-                            handle,
-                            queryString,
-                            SerializationHandler.InitializeSerializedValues(queryValues).TakeNativeHandle()
-                        );
-                    }
 
-                    return tcs.Task.ContinueWith(t =>
-                    {
-                        IntPtr rowSetPtr = t.Result;
-                        var rowSet = new RowSet(rowSetPtr);
-
-                        // TODO: Fix this logic once we have proper USE statement handling in the driver. Make sure no race conditions occur when updating the keyspace
-                        if (isUseStatement)
+                        return tcs.Task.ContinueWith(t =>
                         {
-                            _keyspace = newKeyspace;
+                            IntPtr rowSetPtr = t.Result;
+                            var rowSet = new RowSet(rowSetPtr);
+
+                            // TODO: Fix this logic once we have proper USE statement handling in the driver. Make sure no race conditions occur when updating the keyspace
+                            if (isUseStatement)
+                            {
+                                _keyspace = newKeyspace;
+                            }
+
+                            return rowSet;
+                        }, TaskContinuationOptions.ExecuteSynchronously);
+
+                    case BoundStatement bs:
+                        // Only support bound statements without values for now.
+                        TaskCompletionSource<IntPtr> boundTcs = new(TaskCreationOptions.RunContinuationsAsynchronously);
+                        Tcb boundTcb = Tcb.WithTcs(boundTcs);
+
+                        // The managed PreparedStatement object (and the BoundStatement that
+                        // references it) is rooted here by the local variable `bs`. Because there's an
+                        // active reference in this scope, the GC will not collect the managed object
+                        // while this method is executing — so the native resource under the pointer
+                        // is guaranteed to still exist for the duration of this call.
+                        IntPtr queryPrepared = bs.PreparedStatement.DangerousGetHandle();
+                        object[] queryValuesBound = bs.QueryValues ?? [];
+
+                        if (queryValuesBound.Length == 0)
+                        {
+                            session_query_bound(boundTcb, handle, queryPrepared);
+                        }
+                        else
+                        {
+                            throw new NotImplementedException("Bound statements with values are not yet supported");
                         }
 
-                        return rowSet;
-                    }, TaskContinuationOptions.ExecuteSynchronously);
+                        return boundTcs.Task.ContinueWith(t =>
+                        {
+                            IntPtr rowSetPtr = t.Result;
+                            return new RowSet(rowSetPtr);
+                        }, TaskContinuationOptions.ExecuteSynchronously);
 
-                case BoundStatement bs:
-                    // Only support bound statements without values for now.
-                    TaskCompletionSource<IntPtr> boundTcs = new(TaskCreationOptions.RunContinuationsAsynchronously);
-                    Tcb boundTcb = Tcb.WithTcs(boundTcs);
+                    case BatchStatement s:
+                        throw new NotImplementedException("Batches are not yet supported");
 
-                    // The managed PreparedStatement object (and the BoundStatement that
-                    // references it) is rooted here by the local variable `bs`. Because there's an
-                    // active reference in this scope, the GC will not collect the managed object
-                    // while this method is executing — so the native resource under the pointer
-                    // is guaranteed to still exist for the duration of this call.
-                    IntPtr queryPrepared = bs.PreparedStatement.DangerousGetHandle();
-                    object[] queryValuesBound = bs.QueryValues ?? [];
-
-                    if (queryValuesBound.Length == 0)
-                    {
-                        session_query_bound(boundTcb, handle, queryPrepared);
-                    }
-                    else
-                    {
-                        throw new NotImplementedException("Bound statements with values are not yet supported");
-                    }
-
-                    return boundTcs.Task.ContinueWith(t =>
-                    {
-                        IntPtr rowSetPtr = t.Result;
-                        return new RowSet(rowSetPtr);
-                    }, TaskContinuationOptions.ExecuteSynchronously);
-
-                case BatchStatement s:
-                    throw new NotImplementedException("Batches are not yet supported");
-
-                default:
-                    throw new ArgumentException("Unsupported statement type");
+                    default:
+                        throw new ArgumentException("Unsupported statement type");
+                }
+            }
+            finally
+            {
+                if (refAdded)
+                {
+                    DangerousRelease();
+                }
             }
         }
 
@@ -480,30 +501,51 @@ namespace Cassandra
         public Task<PreparedStatement> PrepareAsync(
             string cqlQuery, string keyspace, IDictionary<string, byte[]> customPayload)
         {
-            if (customPayload != null)
+            bool refAdded = false;
+            try
             {
-                throw new NotSupportedException("Custom payload is not yet supported in Prepare");
+                // Temporarily increment SafeHandle's ref count to protect the native handle
+                // during the synchronous P/Invoke. Rust clones the underlying Arc
+                // synchronously inside the native call, so holding the SafeHandle ref only
+                // for the duration of the P/Invoke is sufficient. We release the ref
+                // immediately after the native call returns in the finally block.
+                // When the last ref is released (via DangerousRelease), any pending Dispose() will
+                // complete and call ReleaseHandle() to free the native session.
+                // This protects against the session trying to access the handle after it has been freed.
+                DangerousAddRef(ref refAdded);
+
+                if (customPayload != null)
+                {
+                    throw new NotSupportedException("Custom payload is not yet supported in Prepare");
+                }
+
+                if (keyspace != null)
+                {
+                    throw new NotSupportedException($"Protocol version 4 does not support" +
+                                                    " setting the keyspace as part of the PREPARE request");
+                }
+
+                TaskCompletionSource<IntPtr> tcs = new(TaskCreationOptions.RunContinuationsAsynchronously);
+                Tcb tcb = Tcb.WithTcs(tcs);
+
+                session_prepare(tcb, handle, cqlQuery);
+
+                return tcs.Task.ContinueWith(t =>
+                {
+                    IntPtr preparedStatementPtr = t.Result;
+                    // FIXME: Bridge with Rust to get variables metadata.
+                    RowSetMetadata variablesRowsMetadata = null;
+                    var ps = new PreparedStatement(preparedStatementPtr, cqlQuery, variablesRowsMetadata);
+                    return ps;
+                }, TaskContinuationOptions.ExecuteSynchronously);
             }
-
-            if (keyspace != null)
+            finally
             {
-                throw new NotSupportedException($"Protocol version 4 does not support" +
-                                                " setting the keyspace as part of the PREPARE request");
+                if (refAdded)
+                {
+                    DangerousRelease();
+                }
             }
-
-            TaskCompletionSource<IntPtr> tcs = new(TaskCreationOptions.RunContinuationsAsynchronously);
-            Tcb tcb = Tcb.WithTcs(tcs);
-
-            session_prepare(tcb, handle, cqlQuery);
-
-            return tcs.Task.ContinueWith(t =>
-            {
-                IntPtr preparedStatementPtr = t.Result;
-                // FIXME: Bridge with Rust to get variables metadata.
-                RowSetMetadata variablesRowsMetadata = null;
-                var ps = new PreparedStatement(preparedStatementPtr, cqlQuery, variablesRowsMetadata);
-                return ps;
-            }, TaskContinuationOptions.ExecuteSynchronously);
         }
 
         public void WaitForSchemaAgreement(RowSet rs)

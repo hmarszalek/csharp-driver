@@ -44,6 +44,9 @@ namespace Cassandra
         unsafe private static extern void session_create(Tcb tcb, [MarshalAs(UnmanagedType.LPUTF8Str)] string uri);
 
         [DllImport("csharp_wrapper", CallingConvention = CallingConvention.Cdecl)]
+        unsafe private static extern void empty_bridged_result_free(IntPtr phantomResult);
+
+        [DllImport("csharp_wrapper", CallingConvention = CallingConvention.Cdecl)]
         unsafe private static extern void session_free(IntPtr session);
 
         [DllImport("csharp_wrapper", CallingConvention = CallingConvention.Cdecl)]

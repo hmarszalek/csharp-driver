@@ -44,6 +44,9 @@ namespace Cassandra
         unsafe private static extern void session_create(Tcb tcb, [MarshalAs(UnmanagedType.LPUTF8Str)] string uri);
 
         [DllImport("csharp_wrapper", CallingConvention = CallingConvention.Cdecl)]
+        unsafe private static extern void session_shutdown(Tcb tcb, IntPtr session);
+
+        [DllImport("csharp_wrapper", CallingConvention = CallingConvention.Cdecl)]
         unsafe private static extern void empty_bridged_result_free(IntPtr phantomResult);
 
         [DllImport("csharp_wrapper", CallingConvention = CallingConvention.Cdecl)]
@@ -241,27 +244,29 @@ namespace Cassandra
         }
 
         /// <inheritdoc />
-        public Task ShutdownAsync()
+        public async Task ShutdownAsync()
         {
             // Only dispose once
             if (Interlocked.Increment(ref _disposed) != 1)
             {
-                return Task.FromResult<object>(null);
+                return;
             }
 
             // FIXME: Actually perform shutdown.
             // Remember to dequeue from Cluster's sessions list.
 
-            // Dispose the session handle which will call session_free in Rust.
-            try
-            {
-                return Task.Run(() => Dispose());
-            }
-            catch (Exception ex)
-            {
-                Session.Logger.Error($"Failed to dispose session during shutdown: {ex}");
-                throw;
-            }
+            // First, we shutdown the session in Rust - this acquires a write lock,
+            // waits for all ongoing queries to complete, and blocks future queries.
+            TaskCompletionSource<IntPtr> tcs = new(TaskCreationOptions.RunContinuationsAsynchronously);
+            Tcb tcb = Tcb.WithTcs(tcs);
+            session_shutdown(tcb, handle);
+            IntPtr emptyBridgedResult = await tcs.Task.ConfigureAwait(false);
+
+            // Free the empty bridged result returned by shutdown
+            empty_bridged_result_free(emptyBridgedResult);
+
+            // Then we dispose the session handle synchronously (calls session_free in Rust).
+            Dispose();
         }
 
         /// <inheritdoc />

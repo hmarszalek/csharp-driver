@@ -8,12 +8,13 @@ use tokio::runtime::Runtime;
 
 use crate::FfiPtr;
 use crate::error_conversion::{
-    AlreadyExistsConstructor, ErrorToException, ExceptionPtr, FunctionFailureExceptionConstructor,
-    InvalidConfigurationInQueryExceptionConstructor, InvalidQueryConstructor,
-    NoHostAvailableExceptionConstructor, OperationTimedOutExceptionConstructor,
-    PreparedQueryNotFoundExceptionConstructor, RequestInvalidExceptionConstructor,
-    RustExceptionConstructor, SyntaxErrorExceptionConstructor, TraceRetrievalExceptionConstructor,
-    TruncateExceptionConstructor, UnauthorizedExceptionConstructor,
+    AlreadyExistsConstructor, AlreadyShutdownExceptionConstructor, ErrorToException, ExceptionPtr,
+    FunctionFailureExceptionConstructor, InvalidConfigurationInQueryExceptionConstructor,
+    InvalidQueryConstructor, NoHostAvailableExceptionConstructor,
+    OperationTimedOutExceptionConstructor, PreparedQueryNotFoundExceptionConstructor,
+    RequestInvalidExceptionConstructor, RustExceptionConstructor, SyntaxErrorExceptionConstructor,
+    TraceRetrievalExceptionConstructor, TruncateExceptionConstructor,
+    UnauthorizedExceptionConstructor,
 };
 use crate::ffi::{ArcFFI, BridgedOwnedSharedPtr};
 
@@ -69,6 +70,7 @@ pub struct Tcb {
 #[repr(C)]
 pub struct ExceptionConstructors {
     pub already_exists_constructor: AlreadyExistsConstructor,
+    pub already_shutdown_exception_constructor: AlreadyShutdownExceptionConstructor,
     pub function_failure_exception_constructor: FunctionFailureExceptionConstructor,
     pub invalid_configuration_in_query_constructor: InvalidConfigurationInQueryExceptionConstructor,
     pub invalid_query_constructor: InvalidQueryConstructor,

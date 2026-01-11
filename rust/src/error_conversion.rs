@@ -117,6 +117,19 @@ impl RequestInvalidExceptionConstructor {
     }
 }
 
+/// FFI constructor for C# `AlreadyShutdownException`.
+#[repr(transparent)]
+pub struct AlreadyShutdownExceptionConstructor(
+    unsafe extern "C" fn(message: FFIStr<'_>) -> ExceptionPtr,
+);
+
+impl AlreadyShutdownExceptionConstructor {
+    pub(crate) fn construct_from_rust(&self, message: &str) -> ExceptionPtr {
+        let message = FFIStr::new(message);
+        unsafe { (self.0)(message) }
+    }
+}
+
 /// FFI constructor for C# `SyntaxErrorException`.
 #[repr(transparent)]
 pub struct SyntaxErrorExceptionConstructor(

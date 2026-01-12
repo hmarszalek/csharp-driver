@@ -220,11 +220,9 @@ pub extern "C" fn row_set_next_row<'row_set>(
 pub extern "C" fn row_set_type_info_get_code(
     type_info_handle: BridgedBorrowedSharedPtr<ColumnType<'_>>,
 ) -> u8 {
-    if type_info_handle.is_null() {
-        return 0;
-    }
-
-    let type_info = RefFFI::as_ref(type_info_handle).unwrap();
+    let Some(type_info) = RefFFI::as_ref(type_info_handle) else {
+        panic!("Null pointer passed to row_set_type_info_get_code");
+    };
     column_type_to_code(type_info)
 }
 
@@ -234,27 +232,25 @@ pub extern "C" fn row_set_type_info_get_code(
 pub extern "C" fn row_set_type_info_get_list_child<'typ>(
     type_info_handle: BridgedBorrowedSharedPtr<'typ, ColumnType<'typ>>,
     out_child_handle: *mut BridgedBorrowedSharedPtr<'typ, ColumnType<'typ>>,
-) -> i32 {
-    if type_info_handle.is_null() {
-        return 0;
+) {
+    if out_child_handle.is_null() {
+        panic!("Null pointer passed to row_set_type_info_get_list_child");
     }
 
-    let type_info = RefFFI::as_ref(type_info_handle).unwrap();
+    let Some(type_info) = RefFFI::as_ref(type_info_handle) else {
+        panic!("Null pointer passed to row_set_type_info_get_list_child");
+    };
     match type_info {
         ColumnType::Collection {
             typ: CollectionType::List(inner),
             ..
         } => {
-            if out_child_handle.is_null() {
-                return 0;
-            }
             let child = inner.as_ref();
             unsafe {
                 out_child_handle.write(RefFFI::as_ptr(child));
             }
-            1
         }
-        _ => 0,
+        _ => panic!("row_set_type_info_get_list_child called on non-List ColumnType"),
     }
 }
 
@@ -262,27 +258,25 @@ pub extern "C" fn row_set_type_info_get_list_child<'typ>(
 pub extern "C" fn row_set_type_info_get_set_child<'typ>(
     type_info_handle: BridgedBorrowedSharedPtr<'typ, ColumnType<'typ>>,
     out_child_handle: *mut BridgedBorrowedSharedPtr<'typ, ColumnType<'typ>>,
-) -> i32 {
-    if type_info_handle.is_null() {
-        return 0;
+) {
+    if out_child_handle.is_null() {
+        panic!("Null pointer passed to row_set_type_info_get_set_child");
     }
 
-    let type_info = RefFFI::as_ref(type_info_handle).unwrap();
+    let Some(type_info) = RefFFI::as_ref(type_info_handle) else {
+        panic!("Null pointer passed to row_set_type_info_get_set_child");
+    };
     match type_info {
         ColumnType::Collection {
             typ: CollectionType::Set(inner),
             ..
         } => {
-            if out_child_handle.is_null() {
-                return 0;
-            }
             let child = inner.as_ref();
             unsafe {
                 out_child_handle.write(RefFFI::as_ptr(child));
             }
-            1
         }
-        _ => 0,
+        _ => panic!("row_set_type_info_get_set_child called on non-Set ColumnType"),
     }
 }
 
@@ -291,20 +285,19 @@ pub extern "C" fn row_set_type_info_get_map_children<'typ>(
     type_info_handle: BridgedBorrowedSharedPtr<'typ, ColumnType<'typ>>,
     out_key_handle: *mut BridgedBorrowedSharedPtr<'typ, ColumnType<'typ>>,
     out_value_handle: *mut BridgedBorrowedSharedPtr<'typ, ColumnType<'typ>>,
-) -> i32 {
-    if type_info_handle.is_null() {
-        return 0;
+) {
+    if out_key_handle.is_null() || out_value_handle.is_null() {
+        panic!("Null pointer passed to row_set_type_info_get_map_children");
     }
 
-    let type_info = RefFFI::as_ref(type_info_handle).unwrap();
+    let Some(type_info) = RefFFI::as_ref(type_info_handle) else {
+        panic!("Null pointer passed to row_set_type_info_get_map_children");
+    };
     match type_info {
         ColumnType::Collection {
             typ: CollectionType::Map(key, value),
             ..
         } => {
-            if out_key_handle.is_null() || out_value_handle.is_null() {
-                return 0;
-            }
             let key_child = key.as_ref();
             let value_child = value.as_ref();
             let k_ptr = RefFFI::as_ptr(key_child);
@@ -313,9 +306,8 @@ pub extern "C" fn row_set_type_info_get_map_children<'typ>(
                 *out_key_handle = k_ptr;
                 *out_value_handle = v_ptr;
             }
-            1
         }
-        _ => 0,
+        _ => panic!("row_set_type_info_get_map_children called on non-Map ColumnType"),
     }
 }
 
@@ -323,14 +315,12 @@ pub extern "C" fn row_set_type_info_get_map_children<'typ>(
 pub extern "C" fn row_set_type_info_get_tuple_field_count(
     type_info_handle: BridgedBorrowedSharedPtr<'_, ColumnType<'_>>,
 ) -> usize {
-    if type_info_handle.is_null() {
-        return 0;
-    }
-
-    let type_info = RefFFI::as_ref(type_info_handle).unwrap();
+    let Some(type_info) = RefFFI::as_ref(type_info_handle) else {
+        panic!("Null pointer passed to row_set_type_info_get_tuple_field_count");
+    };
     match type_info {
         ColumnType::Tuple(fields) => fields.len(),
-        _ => 0,
+        _ => panic!("row_set_type_info_get_tuple_field_count called on non-Tuple ColumnType"),
     }
 }
 
@@ -339,27 +329,26 @@ pub extern "C" fn row_set_type_info_get_tuple_field<'typ>(
     type_info_handle: BridgedBorrowedSharedPtr<'typ, ColumnType<'typ>>,
     index: usize,
     out_field_handle: *mut BridgedBorrowedSharedPtr<'typ, ColumnType<'typ>>,
-) -> i32 {
-    if type_info_handle.is_null() {
-        return 0;
+) {
+    if out_field_handle.is_null() {
+        // Not sure whether to check out parameters
+        panic!("Null pointer passed to row_set_type_info_get_tuple_field");
     }
 
-    let type_info = RefFFI::as_ref(type_info_handle).unwrap();
+    let Some(type_info) = RefFFI::as_ref(type_info_handle) else {
+        panic!("Null pointer passed to row_set_type_info_get_tuple_field");
+    };
     match type_info {
         ColumnType::Tuple(fields) => {
-            if out_field_handle.is_null() {
-                return 0;
-            }
             let Some(field) = fields.get(index) else {
-                return 0;
+                panic!("Index out of bounds in row_set_type_info_get_tuple_field");
             };
             let ptr = RefFFI::as_ptr(field);
             unsafe {
                 *out_field_handle = ptr;
             }
-            1
         }
-        _ => 0,
+        _ => panic!("row_set_type_info_get_tuple_field called on non-Tuple ColumnType"),
     }
 }
 
@@ -369,24 +358,18 @@ pub extern "C" fn row_set_type_info_get_tuple_field<'typ>(
 pub extern "C" fn row_set_type_info_get_udt_name(
     type_info_handle: BridgedBorrowedSharedPtr<'_, ColumnType<'_>>,
     out_name: *mut FFIStr<'_>,
-    out_keyspace: *mut FFIStr<'_>,
-) -> i32 {
-    if type_info_handle.is_null() {
-        return 0;
-    }
-
-    let type_info = RefFFI::as_ref(type_info_handle).unwrap();
+) {
+    let Some(type_info) = RefFFI::as_ref(type_info_handle) else {
+        panic!("Null pointer passed to row_set_type_info_get_udt_name");
+    };
     match type_info {
         ColumnType::UserDefinedType { definition, .. } => {
             let name = definition.name.as_ref();
-            let ks = definition.keyspace.as_ref();
             unsafe {
                 out_name.write(FFIStr::new(name));
-                out_keyspace.write(FFIStr::new(ks));
             }
-            1
         }
-        _ => 0,
+        _ => panic!("row_set_type_info_get_udt_name called on non-UDT ColumnType"),
     }
 }
 
@@ -394,14 +377,12 @@ pub extern "C" fn row_set_type_info_get_udt_name(
 pub extern "C" fn row_set_type_info_get_udt_field_count(
     type_info_handle: BridgedBorrowedSharedPtr<ColumnType<'_>>,
 ) -> usize {
-    if type_info_handle.is_null() {
-        return 0;
-    }
-
-    let type_info = RefFFI::as_ref(type_info_handle).unwrap();
+    let Some(type_info) = RefFFI::as_ref(type_info_handle) else {
+        panic!("Null pointer passed to row_set_type_info_get_udt_field_count");
+    };
     match type_info {
         ColumnType::UserDefinedType { definition, .. } => definition.field_types.len(),
-        _ => 0,
+        _ => panic!("row_set_type_info_get_udt_field_count called on non-UDT ColumnType"),
     }
 }
 
@@ -411,19 +392,17 @@ pub extern "C" fn row_set_type_info_get_udt_field<'typ>(
     index: usize,
     out_field_name: *mut FFIStr<'typ>,
     out_field_type_handle: *mut BridgedBorrowedSharedPtr<'typ, ColumnType<'typ>>,
-) -> i32 {
-    if type_info_handle.is_null() {
-        return 0;
+) {
+    if out_field_type_handle.is_null() || out_field_name.is_null() {
+        panic!("Null pointer passed to row_set_type_info_get_udt_field");
     }
-
-    let type_info = RefFFI::as_ref(type_info_handle).unwrap();
+    let Some(type_info) = RefFFI::as_ref(type_info_handle) else {
+        panic!("Null pointer passed to row_set_type_info_get_udt_field");
+    };
     match type_info {
         ColumnType::UserDefinedType { definition, .. } => {
-            if out_field_type_handle.is_null() || out_field_name.is_null() {
-                return 0;
-            }
             let Some((field_name, field_type)) = definition.field_types.get(index) else {
-                return 0;
+                panic!("Index out of bounds in row_set_type_info_get_udt_field");
             };
             unsafe {
                 out_field_name.write(FFIStr::new(field_name.as_ref()));
@@ -433,9 +412,8 @@ pub extern "C" fn row_set_type_info_get_udt_field<'typ>(
             unsafe {
                 *out_field_type_handle = ptr;
             }
-            1
         }
-        _ => 0,
+        _ => panic!("row_set_type_info_get_udt_field called on non-UDT ColumnType"),
     }
 }
 

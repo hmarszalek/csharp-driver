@@ -211,11 +211,6 @@ impl InvalidQueryConstructor {
 
 // Special errors for C# wrapper.
 
-/// Error indicating that session shutdown has failed.
-#[derive(Error, Debug, Clone)]
-#[error("Session shutdown failed")]
-pub(crate) struct SessionShutdownError();
-
 /// Wrapper enum to represent errors that may occur normally or indicate that the session has been
 /// shut down. It allows to return a clear error condition while satisfying the return type requirements.
 #[derive(Error, Debug, Clone)]
@@ -244,6 +239,13 @@ pub(crate) enum MaybeShutdownError<E> {
 /// The handle must be freed on the C# side when no longer needed.
 pub trait ErrorToException {
     fn to_exception(&self, ctors: &ExceptionConstructors) -> ExceptionPtr;
+}
+
+// This allows returning Infallible as an error type in functions that cannot fail.
+impl ErrorToException for std::convert::Infallible {
+    fn to_exception(&self, _ctors: &ExceptionConstructors) -> ExceptionPtr {
+        match *self {}
+    }
 }
 
 // Specific mapping for PagerExecutionError.
@@ -293,13 +295,6 @@ impl ErrorToException for NewSessionError {
             }
             _ => ctors.rust_exception_constructor.construct_from_rust(self), // TODO: convert errors to specific exceptions
         }
-    }
-}
-
-// Specific mapping for SessionShutdownError
-impl ErrorToException for SessionShutdownError {
-    fn to_exception(&self, ctors: &ExceptionConstructors) -> ExceptionPtr {
-        ctors.rust_exception_constructor.construct_from_rust(self)
     }
 }
 

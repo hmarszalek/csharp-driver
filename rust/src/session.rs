@@ -1,3 +1,5 @@
+use std::convert::Infallible;
+
 use scylla::client::session::Session;
 use scylla::client::session_builder::SessionBuilder;
 use scylla::errors::{NewSessionError, PagerExecutionError, PrepareError};
@@ -5,7 +7,7 @@ use scylla_cql::serialize::row::SerializedValues;
 use tokio::sync::RwLock;
 
 use crate::CSharpStr;
-use crate::error_conversion::{MaybeShutdownError, SessionShutdownError};
+use crate::error_conversion::MaybeShutdownError;
 use crate::ffi::{
     ArcFFI, BoxFFI, BridgedBorrowedSharedPtr, BridgedOwnedExclusivePtr, BridgedOwnedSharedPtr, FFI,
     FromArc,
@@ -85,7 +87,7 @@ pub extern "C" fn session_shutdown(
 
     tracing::trace!("[FFI] Scheduling session shutdown");
 
-    BridgedFuture::spawn::<_, _, SessionShutdownError>(tcb, async move {
+    BridgedFuture::spawn::<_, _, Infallible>(tcb, async move {
         tracing::debug!("[FFI] Shutting down session");
 
         // Acquire write lock - this will pause the asynchronous execution until all read locks (queries)

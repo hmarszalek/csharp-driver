@@ -23,16 +23,7 @@ pub(crate) struct RowSet {
     // and it's possible that C# code will call row_set_next_row concurrently,
     // because RowSet claims it supports parallel enumeration, and does not enforce any locking
     // on its own.
-    pub(crate) pager: std::sync::Mutex<Option<QueryPager>>,
-}
-
-impl RowSet {
-    // Creates an empty RowSet with no pager (zero rows, zero columns).
-    pub(crate) fn empty() -> Self {
-        RowSet {
-            pager: std::sync::Mutex::new(None),
-        }
-    }
+    pub(crate) pager: std::sync::Mutex<QueryPager>,
 }
 
 impl FFI for RowSet {
@@ -55,7 +46,7 @@ pub extern "C" fn row_set_get_columns_count(
 ) -> usize {
     let row_set = ArcFFI::as_ref(row_set_ptr).unwrap();
     let pager = row_set.pager.lock().unwrap();
-    pager.as_ref().map(|p| p.column_specs().len()).unwrap_or(0)
+    pager.column_specs().len()
 }
 
 // Function pointer type for setting column metadata in C#.
@@ -82,10 +73,7 @@ pub extern "C" fn row_set_fill_columns_metadata(
     set_metadata: SetMetadata,
 ) {
     let row_set = ArcFFI::as_ref(row_set_ptr).unwrap();
-    let pager_guard = row_set.pager.lock().unwrap();
-    let Some(pager) = pager_guard.as_ref() else {
-        return;
-    };
+    let pager = row_set.pager.lock().unwrap();
 
     // Iterate column specs and call the metadata setter
     for (i, spec) in pager.column_specs().iter().enumerate() {
@@ -161,10 +149,7 @@ pub extern "C" fn row_set_next_row<'row_set>(
     serializer_ptr: SerializerPtr,
 ) -> bool {
     let row_set = ArcFFI::as_ref(row_set_ptr).unwrap();
-    let mut pager_guard = row_set.pager.lock().unwrap();
-    let Some(pager) = pager_guard.as_mut() else {
-        return false; // Empty RowSet has no rows
-    };
+    let mut pager = row_set.pager.lock().unwrap();
     let num_columns = pager.column_specs().len();
 
     let deserialize_fut = async {

@@ -243,6 +243,11 @@ namespace Cassandra
             }
         }
 
+        public new void Dispose()
+        {
+            ShutdownAsync().GetAwaiter().GetResult();
+        }
+
         /// <inheritdoc />
         public async Task ShutdownAsync()
         {
@@ -266,7 +271,7 @@ namespace Cassandra
             empty_bridged_result_free(emptyBridgedResult);
 
             // Then we dispose the session handle synchronously (calls session_free in Rust).
-            Dispose();
+            base.Dispose();
         }
 
         /// <inheritdoc />

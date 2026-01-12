@@ -71,8 +71,11 @@ namespace Cassandra
         [DllImport("csharp_wrapper", CallingConvention = CallingConvention.Cdecl)]
         unsafe private static extern void session_query_bound(Tcb tcb, IntPtr session, IntPtr preparedStatement);
 
+        [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+        private delegate void KeyspaceCallback(FFIString ffiString);
+
         [DllImport("csharp_wrapper", CallingConvention = CallingConvention.Cdecl)]
-        unsafe private static extern void session_use_keyspace(Tcb tcb, IntPtr session, [MarshalAs(UnmanagedType.LPUTF8Str)] string keyspace, [MarshalAs(UnmanagedType.U1)] bool isCaseSensitive);
+        unsafe private static extern void session_get_keyspace(IntPtr session, KeyspaceCallback callback);
 
         private static readonly Logger Logger = new Logger(typeof(Session));
         private readonly ICluster _cluster;
@@ -96,11 +99,9 @@ namespace Cassandra
         /// <summary>
         /// Gets or sets the keyspace
         /// </summary>
-        private string _keyspace;
         public string Keyspace
         {
-            get => _keyspace;
-            private set => _keyspace = value;
+            get => GetKeyspace();
         }
 
         /// <inheritdoc />
@@ -112,13 +113,11 @@ namespace Cassandra
 
         private Session(
             ICluster cluster,
-            string keyspace,
             IntPtr sessionPtr)
         : base(IntPtr.Zero, true)
         {
             _cluster = cluster;
             Configuration = cluster.Configuration;
-            Keyspace = keyspace;
             handle = sessionPtr;
         }
 
@@ -146,7 +145,7 @@ namespace Cassandra
             session_create(tcb, contactPointUris);
 
             IntPtr sessionPtr = await tcs.Task.ConfigureAwait(false);
-            var session = new Session(cluster, keyspace, sessionPtr);
+            var session = new Session(cluster, sessionPtr);
 
             // If a keyspace was specified, validate it exists by executing USE statement
             // This should throw InvalidQueryException if keyspace doesn't exist.
@@ -198,8 +197,6 @@ namespace Cassandra
         {
             if (Keyspace != keyspace)
             {
-                // FIXME: Migrate to Rust `Session::use_keyspace()`.
-
                 Execute(new SimpleStatement(CqlQueryTools.GetUseKeyspaceCql(keyspace)));
             }
         }
@@ -359,50 +356,28 @@ namespace Cassandra
                         string queryString = s.QueryString;
                         object[] queryValues = s.QueryValues ?? [];
 
-                        // Check if this is a USE statement to track keyspace changes.
-                        // TODO: perform whole logic related to USE statements on the Rust side.
-                        bool isUseStatement = IsUseKeyspace(queryString, out string newKeyspace);
-
                         TaskCompletionSource<IntPtr> tcs = new(TaskCreationOptions.RunContinuationsAsynchronously);
                         Tcb tcb = Tcb.WithTcs(tcs);
 
-                    if (queryValues.Length == 0)
-                    {
-                        // Use session_use_keyspace for USE statements and session_query for other statements.
-                        // TODO: perform whole logic related to USE statements on the Rust side.
-                        if (isUseStatement)
-                        {
-                            // For USE statements, call the dedicated use_keyspace method
-                            // case_sensitive = true to respect the exact casing provided.
-                            session_use_keyspace(tcb, handle, newKeyspace, true);
-                        }
-                        else
+                        if (queryValues.Length == 0)
                         {
                             session_query(tcb, handle, queryString);
                         }
-                    }
-                    else
-                    {
-                        //TODO: abstract value serialization and the Rust-native function out of here
-                        session_query_with_values(
-                            tcb,
-                            handle,
-                            queryString,
-                            SerializationHandler.InitializeSerializedValues(queryValues).TakeNativeHandle()
-                        );
-                    }
+                        else
+                        {
+                            //TODO: abstract value serialization and the Rust-native function out of here
+                            session_query_with_values(
+                                tcb,
+                                handle,
+                                queryString,
+                                SerializationHandler.InitializeSerializedValues(queryValues).TakeNativeHandle()
+                            );
+                        }
 
                         return tcs.Task.ContinueWith(t =>
                         {
                             IntPtr rowSetPtr = t.Result;
                             var rowSet = new RowSet(rowSetPtr);
-
-                            // TODO: Fix this logic once we have proper USE statement handling in the driver. Make sure no race conditions occur when updating the keyspace
-                            if (isUseStatement)
-                            {
-                                _keyspace = newKeyspace;
-                            }
-
                             return rowSet;
                         }, TaskContinuationOptions.ExecuteSynchronously);
 
@@ -580,41 +555,23 @@ namespace Cassandra
             return profile;
         }
 
-        // TODO: Remove this method once we have proper USE statement handling in the driver.
-        // Checks if a query is a USE statement and extracts the keyspace name.
-        // Returns true if the query is a USE statement, false otherwise.
-        private bool IsUseKeyspace(string query, out string keyspace)
+        private string GetKeyspace()
         {
-            keyspace = null;
-
-            if (string.IsNullOrWhiteSpace(query))
-                return false;
-
-            var trimmed = query.Trim();
-
-            // Check if it starts with USE (case-insensitive)
-            if (!trimmed.StartsWith("USE ", StringComparison.OrdinalIgnoreCase))
-                return false;
-
-            // Extract the keyspace name
-            var parts = trimmed.Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
-            if (parts.Length != 2)
-                return false;
-
-            var ksName = parts[1].TrimEnd(';');
-
-            // Remove quotes if present
-            if (ksName.StartsWith("\"") && ksName.EndsWith("\""))
+            bool refAdded = false;
+            try
             {
-                keyspace = ksName.Substring(1, ksName.Length - 2).Replace("\"\"", "\"");
+                DangerousAddRef(ref refAdded);
+                string result = null;
+                session_get_keyspace(handle, (ffiString) => { result = ffiString.ToManagedString(); });
+                return result ?? string.Empty;
             }
-            else
+            finally
             {
-                // Unquoted identifiers are lowercase in CQL.
-                keyspace = ksName.ToLower();
+                if (refAdded)
+                {
+                    DangerousRelease();
+                }
             }
-
-            return true;
         }
     }
 }

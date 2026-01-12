@@ -10,7 +10,7 @@ use crate::CSharpStr;
 use crate::error_conversion::MaybeShutdownError;
 use crate::ffi::{
     ArcFFI, BoxFFI, BridgedBorrowedSharedPtr, BridgedOwnedExclusivePtr, BridgedOwnedSharedPtr, FFI,
-    FromArc,
+    FFIStr, FromArc,
 };
 use crate::pre_serialized_values::pre_serialized_values::PreSerializedValues;
 use crate::prepared_statement::BridgedPreparedStatement;
@@ -315,77 +315,39 @@ pub extern "C" fn session_query_bound(
     })
 }
 
-// TO DO: Handle setting keyspace in session_query
+/// Callback type for session_get_keyspace.
+/// The callback receives an FFIStr with the keyspace name.
+type KeyspaceCallback = extern "C" fn(FFIStr<'_>);
+
+/// Returns the current keyspace by calling the provided callback with an FFIStr.
+/// The callback is invoked while the session lock is held, ensuring the string data
+/// remains valid for the duration of the callback.
 #[unsafe(no_mangle)]
-pub extern "C" fn session_use_keyspace(
-    tcb: Tcb,
+pub extern "C" fn session_get_keyspace(
     session_ptr: BridgedBorrowedSharedPtr<'_, BridgedSession>,
-    keyspace: CSharpStr<'_>,
-    case_sensitive: bool,
+    callback: KeyspaceCallback,
 ) {
-    let keyspace = keyspace.as_cstr().unwrap().to_str().unwrap().to_owned();
     let session_arc = ArcFFI::cloned_from_ptr(session_ptr).unwrap();
 
-    tracing::trace!(
-        "[FFI] Scheduling use_keyspace: \"{}\" (case_sensitive: {})",
-        keyspace,
-        case_sensitive
-    );
+    // Try to acquire a read lock synchronously.
+    let Ok(session_guard) = session_arc.try_read() else {
+        // Session is currently shutting down.
+        callback(FFIStr::new(""));
+        return;
+    };
 
-    // Try to acquire an owned read lock.
-    // If the operation fails, treat it as session shutting down.
-    let session_guard_res = session_arc.try_read_owned();
+    // Check if session is connected or if it has been shut down.
+    let Some(session) = session_guard.session.as_ref() else {
+        callback(FFIStr::new(""));
+        return;
+    };
 
-    BridgedFuture::spawn::<_, _, MaybeShutdownError<PagerExecutionError>>(tcb, async move {
-        tracing::debug!("[FFI] Executing use_keyspace \"{}\"", keyspace);
+    // Get the current keyspace from the session.
+    let Some(keyspace_arc) = session.get_keyspace() else {
+        callback(FFIStr::new(""));
+        return;
+    };
 
-        let Ok(session_guard) = session_guard_res else {
-            // Session is currently shutting down - exit with appropriate error.
-            return Err(MaybeShutdownError::AlreadyShutdown);
-        };
-
-        // Check if session is connected or if it has been shut down.
-        // If it has been shut down, return appropriate error.
-        let Some(session) = session_guard.session.as_ref() else {
-            return Err(MaybeShutdownError::AlreadyShutdown);
-        };
-
-        // TO DO: Fix error handling here to create a new C# exception type for
-        // UseKeyspaceError when use_keyspace isn't called anymore as part of Execute.
-        // Use Session::use_keyspace() to update the Rust session's internal keyspace state.
-        session
-            .use_keyspace(&keyspace, case_sensitive)
-            .await
-            .map_err(|e| {
-                // Error type conversion: UseKeyspaceError -> PagerExecutionError
-                // We need this because BridgedFuture expects PagerExecutionError to match RowSet return.
-                match e {
-                    scylla::errors::UseKeyspaceError::RequestError(req_err) => {
-                        // Common case: request failure (e.g., keyspace doesn't exist)
-                        let req_error: scylla::errors::RequestError = req_err.into();
-                        MaybeShutdownError::Inner(PagerExecutionError::NextPageError(
-                            req_error.into(),
-                        ))
-                    }
-                    scylla::errors::UseKeyspaceError::BadKeyspaceName(_)
-                    | scylla::errors::UseKeyspaceError::KeyspaceNameMismatch { .. }
-                    | scylla::errors::UseKeyspaceError::RequestTimeout(..)
-                    | _ => {
-                        // Catch-all for BadKeyspaceName, KeyspaceNameMismatch, RequestTimeout
-                        // and any future UseKeyspaceError variants (marked #[non_exhaustive])
-                        let req_attempt_err =
-                            scylla::errors::RequestAttemptError::UnexpectedResponse(
-                                scylla::errors::CqlResponseKind::Error,
-                            );
-                        let req_error: scylla::errors::RequestError = req_attempt_err.into();
-                        MaybeShutdownError::Inner(PagerExecutionError::NextPageError(
-                            req_error.into(),
-                        ))
-                    }
-                }
-            })?;
-
-        tracing::trace!("[FFI] use_keyspace executed successfully");
-        Ok(RowSet::empty())
-    })
+    // Call the callback with the borrowed string while the lock is held.
+    callback(FFIStr::new(keyspace_arc.as_ref()));
 }

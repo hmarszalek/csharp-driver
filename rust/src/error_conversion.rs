@@ -5,6 +5,7 @@ use scylla::errors::{
     PagerExecutionError, PrepareError, RequestAttemptError, RequestError,
 };
 use std::fmt::{Debug, Display};
+use thiserror::Error;
 
 use crate::task::ExceptionConstructors;
 
@@ -208,6 +209,18 @@ impl InvalidQueryConstructor {
     }
 }
 
+
+/// Wrapper enum to represent errors that may occur normally or indicate that the session has been
+/// shut down. It allows to return a clear error condition while satisfying the return type requirements.
+#[derive(Error, Debug, Clone)]
+pub(crate) enum MaybeShutdownError<E> {
+    #[error("Error: {0}")]
+    Inner(E),
+
+    #[error("Session has been shut down and can no longer execute operations")]
+    AlreadyShutdown,
+}
+
 /// Trait for converting Rust error types into pointers to C# exceptions using constructors from the TCB.
 ///
 /// # Purpose
@@ -315,6 +328,22 @@ impl ErrorToException for (&DbError, &str) {
             _ => ctors
                 .rust_exception_constructor
                 .construct_from_rust(db_error),
+        }
+    }
+}
+
+impl<E> ErrorToException for MaybeShutdownError<E>
+where
+    E: ErrorToException,
+{
+    fn to_exception(&self, ctors: &ExceptionConstructors) -> ExceptionPtr {
+        match self {
+            MaybeShutdownError::Inner(e) => e.to_exception(ctors),
+            MaybeShutdownError::AlreadyShutdown => ctors
+                .already_shutdown_exception_constructor
+                .construct_from_rust(
+                    "Session has been shut down and can no longer execute operations",
+                ),
         }
     }
 }

@@ -64,7 +64,7 @@ namespace Cassandra
         private static extern FfiError cluster_state_get_replicas_murmur3(
             IntPtr clusterStatePtr,
             [MarshalAs(UnmanagedType.LPUTF8Str)] string keyspace,
-            IntPtr partitionKeyPtr,
+            [In] byte[] partitionKey,
             nuint partitionKeyLen,
             IntPtr callbackState,
             IntPtr callback);
@@ -354,18 +354,8 @@ namespace Cassandra
                 var context = new GetReplicasContext(_hostsById);
                 var gch = GCHandle.Alloc(context, GCHandleType.Normal);
                 
-                // Pin the partition key if it's not empty. We pin it outside the lambda so the pointer
-                // can be safely captured by the lambda passed to ExecuteAndThrowIfFails.
-                GCHandle pinnedPkHandle = default;
-                if (partitionKey is { Length: > 0 })
-                {
-                    pinnedPkHandle = GCHandle.Alloc(partitionKey, GCHandleType.Pinned);
-                }
-                
                 try
                 {
-                    IntPtr pkPtr = pinnedPkHandle.IsAllocated ? pinnedPkHandle.AddrOfPinnedObject() : IntPtr.Zero;
-                    
                     IntPtr callbackPtr;
                     unsafe
                     {
@@ -379,7 +369,7 @@ namespace Cassandra
                     FfiErrorHelpers.ExecuteAndThrowIfFails(() => cluster_state_get_replicas_murmur3(
                         ptr,
                         keyspaceName,
-                        pkPtr,
+                        partitionKey,
                         (nuint)(partitionKey?.Length ?? 0),
                         GCHandle.ToIntPtr(gch),
                         callbackPtr
@@ -390,10 +380,6 @@ namespace Cassandra
                 finally
                 {
                     gch.Free();
-                    if (pinnedPkHandle.IsAllocated)
-                    {
-                        pinnedPkHandle.Free();
-                    }
                 }
             }
             finally
@@ -544,4 +530,3 @@ namespace Cassandra
         }
     }
 }
-

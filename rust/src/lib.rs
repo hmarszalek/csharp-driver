@@ -13,28 +13,6 @@ use std::fmt::Debug;
 use std::marker::PhantomData;
 use std::ptr::NonNull;
 
-#[macro_export]
-macro_rules! ffi_try {
-    // New simple form: (expr, fmt) -> always returns code 1
-    ($expr:expr, $fmt:expr $(,)?) => {
-        match $expr {
-            Ok(v) => v,
-            Err(e) => {
-                let msg = format!($fmt, e);
-                return $crate::FfiError::new(
-                    1,
-                    ::std::ffi::CString::new(msg)
-                        .unwrap_or_else(|_| ::std::ffi::CString::new("error").unwrap()),
-                );
-            }
-        }
-    };
-    // Backward-compatible form: (expr, _code, fmt) -> ignore provided code and use 1
-    ($expr:expr, $code:expr, $fmt:expr $(,)?) => {
-        $crate::ffi_try!($expr, $fmt)
-    };
-}
-
 #[repr(transparent)]
 #[derive(Clone, Copy)]
 pub struct FfiPtr<'a, T: Sized> {
@@ -99,4 +77,11 @@ pub unsafe extern "C" fn ffi_error_free_message(msg: *mut c_char) {
         // SAFETY: `msg` must have been allocated from a `CString::into_raw`.
         let _ = CString::from_raw(msg);
     }
+}
+
+/// Map any Display-able error into an `FfiError` with code=1.
+pub fn ffi_error_from_err(err: impl std::fmt::Display) -> FfiError {
+    let msg = format!("{}", err);
+    let c = CString::new(msg).unwrap_or_else(|_| CString::new("error").unwrap());
+    FfiError::new(1, c)
 }

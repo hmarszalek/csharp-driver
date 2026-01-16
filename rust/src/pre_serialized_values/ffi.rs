@@ -21,23 +21,20 @@ pub unsafe extern "C" fn pre_serialized_values_add_value(
     value_len: usize,
 ) -> FfiError {
     // Validate and obtain mutable reference to PreSerializedValues
-    let values = crate::ffi_try!(
-        BoxFFI::as_mut_ref(values_ptr).ok_or(
-            "invalid PreSerializedValues pointer in pre_serialized_values_add_value".to_string()
-        ),
-        1,
-        "invalid PreSerializedValues pointer in pre_serialized_values_add_value: {}"
-    );
+    let values = match BoxFFI::as_mut_ref(values_ptr) {
+        Some(v) => v,
+        None => {
+            return crate::ffi_error_from_err(
+                "invalid PreSerializedValues pointer in pre_serialized_values_add_value",
+            );
+        }
+    };
 
     // Build the C# serialized value and add it
     let value = CsharpSerializedValue::new(value_ptr, value_len);
-    crate::ffi_try!(
-        values
-            .add_value(value)
-            .map_err(|e| format!("failed to add value: {}", e)),
-        1,
-        "failed to add value: {}"
-    );
+    if let Err(e) = values.add_value(value) {
+        return crate::ffi_error_from_err(format!("failed to add value: {}", e));
+    }
 
     FfiError::ok()
 }
@@ -47,20 +44,19 @@ pub unsafe extern "C" fn pre_serialized_values_add_value(
 pub extern "C" fn pre_serialized_values_add_null(
     values_ptr: BridgedBorrowedExclusivePtr<'_, PreSerializedValues>,
 ) -> FfiError {
-    let values = crate::ffi_try!(
-        BoxFFI::as_mut_ref(values_ptr).ok_or(
-            "invalid PreSerializedValues pointer in pre_serialized_values_add_null".to_string()
-        ),
-        1,
-        "invalid PreSerializedValues pointer in pre_serialized_values_add_null: {}"
-    );
-    crate::ffi_try!(
-        values
-            .add_null()
-            .map_err(|e| format!("failed to add null: {}", e)),
-        1,
-        "failed to add null: {}"
-    );
+    let values = match BoxFFI::as_mut_ref(values_ptr) {
+        Some(v) => v,
+        None => {
+            return crate::ffi_error_from_err(
+                "invalid PreSerializedValues pointer in pre_serialized_values_add_null",
+            );
+        }
+    };
+
+    if let Err(e) = values.add_null() {
+        return crate::ffi_error_from_err(format!("failed to add null: {}", e));
+    }
+
     FfiError::ok()
 }
 
@@ -69,20 +65,19 @@ pub extern "C" fn pre_serialized_values_add_null(
 pub extern "C" fn pre_serialized_values_add_unset(
     values_ptr: BridgedBorrowedExclusivePtr<'_, PreSerializedValues>,
 ) -> FfiError {
-    let values = crate::ffi_try!(
-        BoxFFI::as_mut_ref(values_ptr).ok_or(
-            "invalid PreSerializedValues pointer in pre_serialized_values_add_unset".to_string()
-        ),
-        1,
-        "invalid PreSerializedValues pointer in pre_serialized_values_add_unset: {}"
-    );
-    crate::ffi_try!(
-        values
-            .add_unset()
-            .map_err(|e| format!("failed to add unset: {}", e)),
-        1,
-        "failed to add unset: {}"
-    );
+    let values = match BoxFFI::as_mut_ref(values_ptr) {
+        Some(v) => v,
+        None => {
+            return crate::ffi_error_from_err(
+                "invalid PreSerializedValues pointer in pre_serialized_values_add_unset",
+            );
+        }
+    };
+
+    if let Err(e) = values.add_unset() {
+        return crate::ffi_error_from_err(format!("failed to add unset: {}", e));
+    }
+
     FfiError::ok()
 }
 

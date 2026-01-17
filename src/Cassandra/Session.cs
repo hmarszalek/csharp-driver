@@ -616,5 +616,37 @@ namespace Cassandra
 
             return true;
         }
+
+        /// <summary>
+        /// Tries to create a session reference to prevent disposal while in use.
+        /// Returns true if operation was successful, false otherwise.
+        /// Each successful call must be matched with a call to DecreaseReferenceCount().
+        /// </summary>
+        internal bool TryIncreaseReferenceCount()
+        {
+            bool refAdded = false;
+            try
+            {
+                DangerousAddRef(ref refAdded);
+                return true;
+            }
+            catch
+            {
+                if (refAdded)
+                {
+                    DangerousRelease();
+                }
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// Decreases the session reference count previously increased by TryIncreaseReferenceCount().
+        /// If the reference count reaches zero, the session will be disposed.
+        /// </summary>
+        internal void DecreaseReferenceCount()
+        {
+            DangerousRelease();
+        }
     }
 }

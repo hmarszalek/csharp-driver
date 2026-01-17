@@ -508,6 +508,14 @@ namespace Cassandra
             return true;
         }
 
+        /// <summary>
+        /// Gets the ClusterState from the Rust session.
+        /// </summary>
+        internal BridgedClusterState GetClusterState()
+        {
+            return bridgedSession.GetClusterState();
+        }
+
         internal bool TryIncreaseReferenceCount()
         {
             return bridgedSession.TryIncreaseReferenceCount();

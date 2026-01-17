@@ -53,10 +53,15 @@ namespace Cassandra
         /// </summary>
         internal Configuration Configuration { get; private set; }
 
-        internal Metadata(Configuration configuration)
+        // Function to get an active session from the cluster for FFI calls.
+        // Provided by Cluster during construction. It never returns null.
+        // It either returns a valid Session or throws InvalidOperationException.
+        private readonly Func<Session> _getActiveSessionOrThrow;
+
+        internal Metadata(Configuration configuration, Func<Session> getActiveSessionOrThrow)
         {
-            // FIXME:
-            // throw new NotImplementedException();
+            Configuration = configuration;
+            _getActiveSessionOrThrow = getActiveSessionOrThrow ?? throw new ArgumentNullException(nameof(getActiveSessionOrThrow));
         }
 
         public void Dispose()

@@ -58,6 +58,47 @@ namespace Cassandra
         // It either returns a valid Session or throws InvalidOperationException.
         private readonly Func<Session> _getActiveSessionOrThrow;
 
+        // Pointer to the last cluster state used to detect changes. This is a raw pointer 
+        // stored only for comparison purposes - it does not extend the lifetime of the ClusterState. 
+        // Volatile ensures visibility of updates across threads for the lock-free read in AllHosts().
+        private volatile BridgedClusterState _lastClusterState = null;
+
+        internal class RefreshContext(IReadOnlyDictionary<Guid, Host> oldHosts)
+        {
+            private readonly Dictionary<Guid, Host> _newHosts = new Dictionary<Guid, Host>();
+            private readonly Dictionary<IPEndPoint, Guid> _newHostIdsByIp = new Dictionary<IPEndPoint, Guid>();
+
+            internal IReadOnlyDictionary<Guid, Host> OldHosts { get; } = oldHosts;
+
+            internal void AddHost(Host host)
+            {
+                _newHosts[host.HostId] = host;
+                _newHostIdsByIp[host.Address] = host.HostId;
+            }
+
+            internal HostRegistry ToNewRegistry() => new HostRegistry(_newHosts, _newHostIdsByIp);
+        }
+
+        // HostRegistry groups both maps so they can be swapped atomically.
+        internal sealed class HostRegistry(
+            IReadOnlyDictionary<Guid, Host> hostsById,
+            IReadOnlyDictionary<IPEndPoint, Guid> hostIdsByIp)
+        {
+            internal readonly IReadOnlyDictionary<Guid, Host> HostsById =
+                hostsById ?? new Dictionary<Guid, Host>();
+
+            internal readonly IReadOnlyDictionary<IPEndPoint, Guid> HostIdsByIp =
+                hostIdsByIp ?? new Dictionary<IPEndPoint, Guid>();
+        }
+
+        // Active host registry reference; swapped atomically on refresh.
+        // NOTE: Do not access this field directly; use GetRegistry() instead, since the accessor covers the
+        // refreshment logic, with a compromise between limited data staleness and performance.
+        private volatile HostRegistry _hostRegistry =
+            new HostRegistry(new Dictionary<Guid, Host>(), new Dictionary<IPEndPoint, Guid>());
+
+        private readonly object _hostLock = new object();
+
         internal Metadata(Configuration configuration, Func<Session> getActiveSessionOrThrow)
         {
             Configuration = configuration;
@@ -66,8 +107,11 @@ namespace Cassandra
 
         public void Dispose()
         {
-            // No-op for now - metadata shutdown not yet implemented
-            // throw new NotImplementedException();
+            lock (_hostLock)
+            {
+                _lastClusterState?.Dispose();
+                _lastClusterState = null;
+            }
         }
         public Host GetHost(IPEndPoint address)
         {
@@ -102,6 +146,67 @@ namespace Cassandra
         public ICollection<HostShard> GetReplicas(byte[] partitionKey)
         {
             throw new NotImplementedException();
+        }
+
+        /// <summary>
+        /// Returns a registry instance, refreshing topology if needed.
+        /// </summary>
+        private HostRegistry GetRegistry()
+        {
+            var session = _getActiveSessionOrThrow();
+
+            try
+            {
+                // First, try to perform a lock-free read.
+                // This is the fast path in the common case where the cluster state has not changed.
+                using (var clusterState = session.GetClusterState())
+                {
+                    // If a cached cluster state exists, try to increase its reference count
+                    // to use it for comparison without taking the lock.
+                    if (_lastClusterState != null && _lastClusterState.TryIncreaseReferenceCount())
+                    {
+                        try
+                        {
+                            if (_lastClusterState.Equals(clusterState))
+                            {
+                                return _hostRegistry;
+                            }
+                        }
+                        finally
+                        {
+                            // Release the reference acquired above.
+                            _lastClusterState.DecreaseReferenceCount();
+                        }
+                    }
+                }
+
+                // Acquire the host lock to perform update if needed.
+                lock (_hostLock)
+                {
+                    // Acquire fresh pointer inside lock - the cluster state may have changed while we waited for lock.
+                    var clusterState = session.GetClusterState();
+                    // Double-check: another thread may have updated the cache while we waited for lock.
+                    if (_lastClusterState != null && _lastClusterState.Equals(clusterState))
+                    {
+                        clusterState.Dispose();
+                        return _hostRegistry;
+                    }
+
+                    // If cluster state changed, and cache is stale, refresh it.
+                    RefreshTopologyCache(clusterState);
+
+                    // Dispose the old state as we don't need it anymore.
+                    var oldState = Interlocked.Exchange(ref _lastClusterState, clusterState);
+                    oldState?.Dispose();
+
+                    return _hostRegistry;
+                }
+            }
+            finally
+            {
+                // Release the lock on the session created by calling _getActiveSessionOrThrow. 
+                session.DecreaseReferenceCount();
+            }
         }
 
         /// <summary>

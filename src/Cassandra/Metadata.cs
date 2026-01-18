@@ -182,9 +182,22 @@ namespace Cassandra
             // No-op for now - metadata shutdown not yet implemented
             // throw new NotImplementedException();
         }
+
         public Host GetHost(IPEndPoint address)
         {
-            throw new NotImplementedException();
+            var registry = GetRegistry();
+
+            return !registry.HostIdsByIp.TryGetValue(address, out var hostId) ? null : registry.HostsById.GetValueOrDefault(hostId);
+        }
+
+        internal Guid? GetHostIdByIp(IPEndPoint address)
+        {
+            if (GetRegistry().HostIdsByIp.TryGetValue(address, out var hostId))
+            {
+                return hostId;
+            }
+
+            return null;
         }
 
         /// <summary>
@@ -193,7 +206,8 @@ namespace Cassandra
         /// <returns>collection of all known hosts of this cluster.</returns>
         public ICollection<Host> AllHosts()
         {
-            throw new NotImplementedException();
+            // Return a snapshot copy of the values as ICollection<Host>
+            return new List<Host>(GetRegistry().HostsById.Values);
         }
 
         public IEnumerable<IPEndPoint> AllReplicas()

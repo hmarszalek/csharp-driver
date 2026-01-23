@@ -234,12 +234,17 @@ namespace Cassandra
         private HostRegistry GetRegistry()
         {
             var session = _getActiveSessionOrThrow();
-            IntPtr clusterStatePtr;
 
             try
             {
-                // Check if cache is valid without lock first using a temporary pointer check.
+                IntPtr clusterStatePtr;
+
+                // Check if cache is valid without lock using pointer equality.
                 // This avoids waiting on the lock for the common case where topology hasn't changed.
+                //
+                // The pointer equality check is enough (ABA problem is not possible),
+                // because Arc<ClusterState> is kept alive by caching it while in use by the session,
+                // so the pointer cannot be reused for a different ClusterState instance.
                 clusterStatePtr = session.GetClusterStatePtr();
                 try
                 {
@@ -270,14 +275,18 @@ namespace Cassandra
                         // Otherwise we are forced to refill all hosts.
                         RefreshTopologyCache(clusterStatePtr);
 
-                        // Store the raw pointer address for future comparisons.
-                        _lastClusterStatePtr = clusterStatePtr;
+                        // Cache the cluster state for future comparisons.
+                        // Keep it alive to prevent ABA problem (pointer reused for a different ClusterState).
+                        // Also, free the previous pointer if any.
+                        (_lastClusterStatePtr, clusterStatePtr) = (clusterStatePtr, _lastClusterStatePtr);
 
                         return _hostRegistry;
                     }
                     finally
                     {
-                        // Always free the fetched cluster state pointer to avoid memory leak.
+                        // Always free one Arc<ClusterState> to avoid memory leak:
+                        // - either the newly fetched one in case of an exception thrown;
+                        // - or the previous (obsolete) one after swapping pointers.
                         cluster_state_free(clusterStatePtr);
                     }
                 }

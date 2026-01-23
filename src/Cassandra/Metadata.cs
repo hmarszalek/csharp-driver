@@ -40,9 +40,6 @@ namespace Cassandra
 #pragma warning restore CS0067
 
         [DllImport("csharp_wrapper", CallingConvention = CallingConvention.Cdecl)]
-        private static extern IntPtr cluster_state_get_raw_ptr(IntPtr clusterStatePtr);
-
-        [DllImport("csharp_wrapper", CallingConvention = CallingConvention.Cdecl)]
         private static extern void cluster_state_fill_nodes(
             IntPtr clusterStatePtr,
             IntPtr contextPtr,
@@ -51,7 +48,7 @@ namespace Cassandra
         [DllImport("csharp_wrapper", CallingConvention = CallingConvention.Cdecl)]
         private static extern void cluster_state_free(IntPtr clusterStatePtr);
 
-        private static readonly unsafe delegate* unmanaged[Cdecl]<IntPtr, FFIByteSlice,  FFIByteSlice, ushort, FFIString, FFIString, void> AddHostPtr = &AddHostToList;
+        private static readonly unsafe delegate* unmanaged[Cdecl]<IntPtr, FFIByteSlice, FFIByteSlice, ushort, FFIString, FFIString, void> AddHostPtr = &AddHostToList;
 
         [UnmanagedCallersOnly(CallConvs = new Type[] { typeof(CallConvCdecl) })]
         private static unsafe void AddHostToList(
@@ -74,7 +71,7 @@ namespace Cassandra
                 // 4. Unsafe.Read dereferences the pointer to get the current reference value
                 // This matches the pattern used in row_set_fill_columns_metadata.
                 var context = Unsafe.AsRef<RefreshContext>((void*)contextPtr);
-                
+
                 var hostId = new Guid(idBytes.ToSpan());
 
                 // Construct IPAddress directly from bytes (4 for IPv4, 16 for IPv6). ipBytes is an FFIByteSlice 
@@ -143,7 +140,7 @@ namespace Cassandra
             internal IReadOnlyDictionary<Guid, Host> OldHosts { get; } = oldHosts;
 
             internal void AddHost(Host host)
-            {   
+            {
                 _newHosts[host.HostId] = host;
                 _newHostIdsByIp[host.Address] = host.HostId;
             }
@@ -246,8 +243,7 @@ namespace Cassandra
                 clusterStatePtr = session.GetClusterStatePtr();
                 try
                 {
-                    IntPtr rawPtr = cluster_state_get_raw_ptr(clusterStatePtr);
-                    if (_lastClusterStatePtr != IntPtr.Zero && rawPtr == _lastClusterStatePtr)
+                    if (_lastClusterStatePtr != IntPtr.Zero && clusterStatePtr == _lastClusterStatePtr)
                     {
                         return _hostRegistry;
                     }
@@ -266,8 +262,7 @@ namespace Cassandra
                     try
                     {
                         // Double-check: another thread may have updated the cache while we waited for lock
-                        IntPtr rawPtr = cluster_state_get_raw_ptr(clusterStatePtr);
-                        if (_lastClusterStatePtr != IntPtr.Zero && rawPtr == _lastClusterStatePtr)
+                        if (_lastClusterStatePtr != IntPtr.Zero && clusterStatePtr == _lastClusterStatePtr)
                         {
                             return _hostRegistry;
                         }
@@ -276,7 +271,7 @@ namespace Cassandra
                         RefreshTopologyCache(clusterStatePtr);
 
                         // Store the raw pointer address for future comparisons.
-                        _lastClusterStatePtr = rawPtr;
+                        _lastClusterStatePtr = clusterStatePtr;
 
                         return _hostRegistry;
                     }

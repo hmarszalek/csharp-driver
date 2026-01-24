@@ -44,8 +44,54 @@ pub struct TcsPtr(FfiPtr<'static, Tcs>);
 
 unsafe impl Send for TcsPtr {}
 
+/// A struct representing a manually destructible resource passed across the FFI boundary.
+/// It contains a pointer to the resource and a function pointer to its destructor.
+/// All changes to this struct's fields must be mirrored in C# code in the exact same order.
+#[repr(C)]
+pub struct ManuallyDestructible {
+    pub ptr: BridgedOwnedSharedPtr<c_void>,
+    pub destructor: unsafe extern "C" fn(BridgedOwnedSharedPtr<c_void>),
+}
+
+impl Debug for ManuallyDestructible {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let raw_ptr: *mut c_void = self.ptr.to_raw().unwrap_or(std::ptr::null_mut());
+        let destructor_ptr: *const () = self.destructor as *const ();
+
+        f.debug_struct("ManuallyDestructible")
+            .field("ptr", &raw_ptr)
+            .field("destructor", &destructor_ptr)
+            .field("is_null", &self.ptr.is_null())
+            .finish()
+    }
+}
+
+/// Safety: ManuallyDestructible can be sent across threads safely,
+/// as it only contains a BridgedOwnedSharedPtr and a function pointer.
+unsafe impl Send for ManuallyDestructible {}
+
+/// This trait marks types that can be safely destructed across the FFI boundary.
+/// It provides a method to obtain a C ABI function pointer that knows how to free `Self`.
+/// This is used with `ManuallyDestructible` to ensure proper resource cleanup.
+pub trait Destructible: ArcFFI + Sized + 'static {
+    /// Returns an extern "C" function pointer that knows how to free `Self` from a `c_void` pointer.
+    fn void_destructor() -> unsafe extern "C" fn(BridgedOwnedSharedPtr<c_void>) {
+        extern "C" fn arc_void_free<T: ArcFFI + 'static>(ptr: BridgedOwnedSharedPtr<c_void>) {
+            // SAFETY: The pointer was originally produced via `ArcFFI::into_ptr(Arc<T>)`
+            // and then cast to `c_void`. Reinterpret cast back to the concrete type and free.
+            let typed_ptr: BridgedOwnedSharedPtr<T> = unsafe { ptr.cast() };
+            ArcFFI::free(typed_ptr);
+        }
+
+        arc_void_free::<Self>
+    }
+}
+
+// Blanket impl: any ArcFFI type is destructible via the generic c_void destructor.
+impl<T> Destructible for T where T: ArcFFI + Sized + 'static {}
+
 /// Function pointer type to complete a TaskCompletionSource with a result.
-type CompleteTask = unsafe extern "C" fn(tcs: TcsPtr, result: BridgedOwnedSharedPtr<c_void>);
+type CompleteTask = unsafe extern "C" fn(tcs: TcsPtr, result: ManuallyDestructible);
 
 /// Function pointer type to fail a TaskCompletionSource with an exception handle.
 type FailTask = unsafe extern "C" fn(tcs: TcsPtr, exception_handle: ExceptionPtr);
@@ -106,8 +152,8 @@ impl BridgedFuture {
     pub(crate) fn spawn<F, T, E>(tcb: Tcb, future: F)
     where
         F: Future<Output = Result<T, E>> + Send + 'static,
-        T: Send + 'static + ArcFFI, // Must be shareable across FFI boundary. For now we only support ArcFFI.
-        T: Debug,                   // Temporarily, for debug prints.
+        T: Send + 'static + ArcFFI + Destructible, // Must be shareable across FFI boundary. For now we only support ArcFFI.
+        T: Debug,                                  // Temporarily, for debug prints.
         E: Debug + Display + ErrorToException, // Error must be printable for logging and exception conversion.
                                                // The ErrorToException trait is used to convert the error to an exception pointer.
     {
@@ -132,7 +178,12 @@ impl BridgedFuture {
                 // On success, complete the task with the result.
                 Ok(Ok(res)) => {
                     let arced_res = Arc::new(res);
-                    unsafe { complete_task(tcs, ArcFFI::into_ptr(arced_res).cast_to_void()) };
+                    let md_void = ManuallyDestructible {
+                        ptr: ArcFFI::into_ptr(arced_res).cast_to_void(),
+                        destructor: T::void_destructor(),
+                    };
+
+                    unsafe { complete_task(tcs, md_void) };
                 }
 
                 // On error, fail the task with exception.

@@ -290,7 +290,8 @@ namespace Cassandra
                     // Check if this is a USE statement to track keyspace changes.
                     // TODO: perform whole logic related to USE statements on the Rust side.
                     bool isUseStatement = IsUseKeyspace(queryString, out string newKeyspace);
-                    Task<IntPtr> task;
+
+                    Task<ManuallyDestructible> task;
                     if (queryValues.Length == 0)
                     {
                         // Use session_use_keyspace for USE statements and session_query for other statements.
@@ -314,10 +315,10 @@ namespace Cassandra
                         );
                     }
 
-                    return task.ContinueWith(t =>
-                    {
-                        IntPtr rowSetPtr = t.Result;
-                        var rowSet = new RowSet(rowSetPtr);
+                        return task.ContinueWith(t =>
+                        {
+                            ManuallyDestructible mdRowSet = t.Result;
+                            var rowSet = new RowSet(mdRowSet);
 
                         // TODO: Fix this logic once we have proper USE statement handling in the driver. Make sure no race conditions occur when updating the keyspace
                         if (isUseStatement)
@@ -339,7 +340,7 @@ namespace Cassandra
                     IntPtr queryPrepared = bs.PreparedStatement.DangerousGetHandle();
                     object[] queryValuesBound = bs.QueryValues ?? [];
 
-                    Task<IntPtr> boundTask;
+                    Task<ManuallyDestructible> boundTask;
                     if (queryValuesBound.Length == 0)
                     {
                         boundTask = bridgedSession.QueryBound(queryPrepared);
@@ -349,11 +350,11 @@ namespace Cassandra
                         throw new NotImplementedException("Bound statements with values are not yet supported");
                     }
 
-                    return boundTask.ContinueWith(t =>
-                    {
-                        IntPtr rowSetPtr = t.Result;
-                        return new RowSet(rowSetPtr);
-                    }, TaskContinuationOptions.ExecuteSynchronously);
+                        return boundTask.ContinueWith(t =>
+                        {
+                            ManuallyDestructible mdRowSet = t.Result;
+                            return new RowSet(mdRowSet);
+                        }, TaskContinuationOptions.ExecuteSynchronously);
 
                 case BatchStatement s:
                     throw new NotImplementedException("Batches are not yet supported");

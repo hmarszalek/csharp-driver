@@ -103,9 +103,9 @@ namespace Cassandra
         /// Executes a query on the session.
         /// </summary>
         /// <param name="statement">CQL statement to be executed on the session.</param>
-        internal Task<IntPtr> Query(string statement)
+        internal Task<ManuallyDestructible> Query(string statement)
         {
-            return RunAsyncWithIncrement<IntPtr>((tcb, ptr) => session_query(tcb, ptr, statement));
+            return RunAsyncWithIncrement<ManuallyDestructible>((tcb, ptr) => session_query(tcb, ptr, statement));
         }
 
         /// <summary>
@@ -113,10 +113,10 @@ namespace Cassandra
         /// </summary>
         /// <param name="statement">CQL statement to be executed on the session.</param>
         /// <param name="queryValues">Values to be serialized and bound to the query.</param>
-        internal Task<IntPtr> QueryWithValues(string statement, object[] queryValues)
+        internal Task<ManuallyDestructible> QueryWithValues(string statement, object[] queryValues)
         {
             IntPtr valuesPtr = SerializationHandler.InitializeSerializedValues(queryValues).TakeNativeHandle();
-            return RunAsyncWithIncrement<IntPtr>((tcb, ptr) => session_query_with_values(tcb, ptr, statement, valuesPtr));
+            return RunAsyncWithIncrement<ManuallyDestructible>((tcb, ptr) => session_query_with_values(tcb, ptr, statement, valuesPtr));
         }
         
         /// <summary>
@@ -124,9 +124,9 @@ namespace Cassandra
         /// </summary>
         /// <param name="keyspace"></param>
         /// <param name="isCaseSensitive"></param>
-        internal Task<IntPtr> UseKeyspace(string keyspace, bool isCaseSensitive)
+        internal Task<ManuallyDestructible> UseKeyspace(string keyspace, bool isCaseSensitive)
         {
-            return RunAsyncWithIncrement<IntPtr>((tcb, ptr) => session_use_keyspace(tcb, ptr, keyspace, isCaseSensitive));
+            return RunAsyncWithIncrement<ManuallyDestructible>((tcb, ptr) => session_use_keyspace(tcb, ptr, keyspace, isCaseSensitive));
         }
 
         /// <summary>
@@ -142,9 +142,9 @@ namespace Cassandra
         /// Executes a prepared statement with bound values.
         /// </summary>
         /// <param name="preparedStatement">Pointer to the prepared statement handle.</param>
-        internal Task<IntPtr> QueryBound(IntPtr preparedStatement)
+        internal Task<ManuallyDestructible> QueryBound(IntPtr preparedStatement)
         {
-            return RunAsyncWithIncrement<IntPtr>((tcb, ptr) => session_query_bound(tcb, ptr, preparedStatement));
+            return RunAsyncWithIncrement<ManuallyDestructible>((tcb, ptr) => session_query_bound(tcb, ptr, preparedStatement));
         }
     }
 }

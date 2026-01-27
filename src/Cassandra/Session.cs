@@ -507,5 +507,15 @@ namespace Cassandra
 
             return true;
         }
+
+        internal bool TryIncreaseReferenceCount()
+        {
+            return bridgedSession.TryIncreaseReferenceCount();
+        }
+
+        internal void DecreaseReferenceCount()
+        {
+            bridgedSession.DecreaseReferenceCount();
+        }
     }
 }

@@ -177,13 +177,18 @@ namespace Cassandra
                 // to use it for comparison without taking the lock.
                 if (_lastClusterState != null && _lastClusterState.TryIncreaseReferenceCount())
                 {
-                    if (_lastClusterState.Equals(clusterState))
+                    try
                     {
-                        return _hostRegistry;
+                        if (_lastClusterState.Equals(clusterState))
+                        {
+                            return _hostRegistry;
+                        }
                     }
-
-                    // Release the reference acquired above.
-                    _lastClusterState.DecreaseReferenceCount();
+                    finally
+                    {
+                        // Release the reference acquired above.
+                        _lastClusterState.DecreaseReferenceCount();
+                    }
                 }
 
                 // Acquire the host lock to perform update if needed.

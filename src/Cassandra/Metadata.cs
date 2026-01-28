@@ -171,23 +171,26 @@ namespace Cassandra
 
             try
             {
-                var clusterState = session.GetClusterState();
-
-                // If a cached cluster state exists, try to increase its reference count
-                // to use it for comparison without taking the lock.
-                if (_lastClusterState != null && _lastClusterState.TryIncreaseReferenceCount())
+                // First, try to perform a lock-free read.
+                // This is the fast path in the common case where the cluster state has not changed.
+                using (var clusterState = session.GetClusterState())
                 {
-                    try
+                    // If a cached cluster state exists, try to increase its reference count
+                    // to use it for comparison without taking the lock.
+                    if (_lastClusterState != null && _lastClusterState.TryIncreaseReferenceCount())
                     {
-                        if (_lastClusterState.Equals(clusterState))
+                        try
                         {
-                            return _hostRegistry;
+                            if (_lastClusterState.Equals(clusterState))
+                            {
+                                return _hostRegistry;
+                            }
                         }
-                    }
-                    finally
-                    {
-                        // Release the reference acquired above.
-                        _lastClusterState.DecreaseReferenceCount();
+                        finally
+                        {
+                            // Release the reference acquired above.
+                            _lastClusterState.DecreaseReferenceCount();
+                        }
                     }
                 }
 
@@ -195,11 +198,11 @@ namespace Cassandra
                 lock (_hostLock)
                 {
                     // Acquire fresh pointer inside lock - the cluster state may have changed while we waited for lock.
-                    clusterState = session.GetClusterState();
-
+                    var clusterState = session.GetClusterState();
                     // Double-check: another thread may have updated the cache while we waited for lock.
                     if (_lastClusterState != null && _lastClusterState.Equals(clusterState))
                     {
+                        clusterState.Dispose();
                         return _hostRegistry;
                     }
 

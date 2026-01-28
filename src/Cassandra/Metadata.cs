@@ -210,6 +210,18 @@ namespace Cassandra
         }
 
         /// <summary>
+        /// Updates the cached topology if the cluster state has changed.
+        /// </summary>
+        private void RefreshTopologyCache(BridgedClusterState clusterState)
+        {
+            var context = new RefreshContext(_hostRegistry.HostsById);
+            clusterState.FillHostCache(context);
+
+            // Atomically replace the host registry reference with the new one.
+            Interlocked.Exchange(ref _hostRegistry, context.ToNewRegistry());
+        }
+
+        /// <summary>
         ///  Returns metadata of specified keyspace.
         /// </summary>
         /// <param name="keyspace"> the name of the keyspace for which metadata should be

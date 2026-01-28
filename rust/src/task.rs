@@ -54,7 +54,7 @@ pub struct ManuallyDestructible {
 }
 
 impl ManuallyDestructible {
-    fn new(
+    pub(crate) fn new(
         ptr: BridgedOwnedSharedPtr<c_void>,
         destructor: Option<unsafe extern "C" fn(BridgedOwnedSharedPtr<c_void>)>,
     ) -> Self {

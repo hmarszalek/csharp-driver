@@ -212,10 +212,7 @@ impl BridgedFuture {
                     let md_void = match res {
                         Some(inner) => {
                             let arced_res = Arc::new(inner);
-                            ManuallyDestructible::new(
-                                ArcFFI::into_ptr(arced_res).cast_to_void(),
-                                Some(T::void_destructor()),
-                            )
+                            ManuallyDestructible::from_destructible(arced_res)
                         }
                         None => ManuallyDestructible::new_null(),
                     };

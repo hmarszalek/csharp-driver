@@ -23,5 +23,15 @@ namespace Cassandra
 
         [DllImport("csharp_wrapper", CallingConvention = CallingConvention.Cdecl)]
         unsafe private static extern RustBridge.FfiException prepared_statement_is_lwt(IntPtr prepared_statement, [MarshalAs(UnmanagedType.U1)] out bool isLwt);
+
+        [DllImport("csharp_wrapper", CallingConvention = CallingConvention.Cdecl)]
+        unsafe private static extern RustBridge.FfiException prepared_statement_get_column_specs_count(IntPtr prepared_statement, out nuint count);
+
+        private nuint GetColumnSpecsCount()
+        {
+            nuint count = 0;
+            RunWithIncrement(handle => prepared_statement_get_column_specs_count(handle, out count));
+            return count;
+        }
     }
 }

@@ -1,6 +1,6 @@
 use futures::FutureExt;
 use std::ffi::c_void;
-use std::fmt::{Debug, Display};
+use std::fmt::Debug;
 use std::future::Future;
 use std::panic::AssertUnwindSafe;
 use std::sync::{Arc, LazyLock};
@@ -193,8 +193,8 @@ impl BridgedFuture {
         F: Future<Output = Result<Option<T>, E>> + Send + 'static,
         T: Send + 'static + ArcFFI + Destructible, // Must be shareable across FFI boundary. For now we only support ArcFFI.
         T: Debug,                                  // Temporarily, for debug prints.
-        E: Debug + Display + ErrorToException, // Error must be printable for logging and exception conversion.
-                                               // The ErrorToException trait is used to convert the error to an exception pointer.
+        E: Debug + ErrorToException, // Error must be printable for logging and exception conversion.
+                                     // The ErrorToException trait is used to convert the error to an exception pointer.
     {
         RUNTIME.spawn(async move {
             // Catch panics in the future to prevent unwinding tokio executor thread's stack.

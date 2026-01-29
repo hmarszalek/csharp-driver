@@ -328,7 +328,7 @@ namespace Cassandra
         /// <summary>
         /// This shall be called by Rust code when the operation is completed.
         /// </summary>
-        // Signature in Rust: extern "C" fn(tcs: *mut c_void, res: *mut c_void)
+        // Signature in Rust: extern "C" fn(tcs: *mut c_void, res: ManuallyDestructible)
         //
         // This attribute makes the method callable from native code.
         // It also allows taking a function pointer to the method.

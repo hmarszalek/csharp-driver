@@ -113,12 +113,6 @@ pub trait Destructible: ArcFFI + Sized + 'static {
 // Blanket impl: any ArcFFI type is destructible via the generic c_void destructor.
 impl<T> Destructible for T where T: ArcFFI + Sized + 'static {}
 
-/// Function pointer type to complete a TaskCompletionSource with a result.
-type CompleteTask = unsafe extern "C" fn(tcs: TcsPtr, result: ManuallyDestructible);
-
-/// Function pointer type to fail a TaskCompletionSource with an exception handle.
-type FailTask = unsafe extern "C" fn(tcs: TcsPtr, exception_handle: ExceptionPtr);
-
 /// **Task Control Block** (TCB)
 ///
 /// Contains the necessary information to manually control a Task execution from Rust.
@@ -128,8 +122,11 @@ type FailTask = unsafe extern "C" fn(tcs: TcsPtr, exception_handle: ExceptionPtr
 #[repr(C)] // <- Ensure FFI-compatible layout
 pub struct Tcb {
     tcs: TcsPtr,
-    complete_task: CompleteTask,
-    fail_task: FailTask,
+    /// Function pointer type to complete a TaskCompletionSource with a result.
+    complete_task: unsafe extern "C" fn(tcs: TcsPtr, result: ManuallyDestructible),
+    /// Function pointer type to fail a TaskCompletionSource with an exception handle.
+    fail_task: unsafe extern "C" fn(tcs: TcsPtr, exception_handle: ExceptionPtr),
+    /// Pointer to the collection of exception constructors.
     // SAFETY: The memory is a leaked unmanaged allocation on the C# side.
     // This guarantees that the pointer remains valid and is not moved or deallocated.
     constructors: &'static ExceptionConstructors,

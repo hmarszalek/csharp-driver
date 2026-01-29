@@ -348,7 +348,10 @@ namespace Cassandra
                     }
                     else
                     {
-                        throw new NotImplementedException("Bound statements with values are not yet supported");
+                        boundTask = bridgedSession.QueryBoundWithValues(
+                            queryPrepared,
+                            queryValuesBound
+                        );
                     }
 
                     return boundTask.ContinueWith(t =>

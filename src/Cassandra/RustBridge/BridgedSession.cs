@@ -54,6 +54,9 @@ namespace Cassandra
         unsafe private static extern void session_query_bound(Tcb tcb, IntPtr session, IntPtr preparedStatement);
 
         [DllImport("csharp_wrapper", CallingConvention = CallingConvention.Cdecl)]
+        unsafe private static extern void session_query_bound_with_values(Tcb tcb, IntPtr session, IntPtr preparedStatement, IntPtr valuesPtr);
+
+        [DllImport("csharp_wrapper", CallingConvention = CallingConvention.Cdecl)]
         unsafe private static extern void session_use_keyspace(Tcb tcb, IntPtr session, [MarshalAs(UnmanagedType.LPUTF8Str)] string keyspace, [MarshalAs(UnmanagedType.U1)] bool isCaseSensitive);
 
         /// <summary>
@@ -140,6 +143,17 @@ namespace Cassandra
         internal Task<ManuallyDestructible> QueryBound(IntPtr preparedStatement)
         {
             return RunAsyncWithIncrement<ManuallyDestructible>((tcb, ptr) => session_query_bound(tcb, ptr, preparedStatement));
+        }
+        
+        /// <summary>
+        /// Executes a prepared statement with bound values.
+        /// </summary>
+        /// <param name="preparedStatement">Pointer to the prepared statement handle.</param>
+        /// <param name="queryValues">Values to be serialized and bound to the prepared statement.</param>
+        internal Task<ManuallyDestructible> QueryBoundWithValues(IntPtr preparedStatement, object[] queryValues)
+        {
+            IntPtr valuesPtr = SerializationHandler.InitializeSerializedValues(queryValues).TakeNativeHandle();
+            return RunAsyncWithIncrement<ManuallyDestructible>((tcb, ptr) => session_query_bound_with_values(tcb, ptr, preparedStatement, valuesPtr));
         }
 
         /// <summary>

@@ -158,6 +158,22 @@ pub struct ExceptionConstructors {
     pub unauthorized_exception_constructor: UnauthorizedExceptionConstructor,
 }
 
+impl Tcb {
+    /// Completes the task with the provided result, consuming the TCB.
+    pub(crate) fn complete_task(self, md: ManuallyDestructible) {
+        unsafe {
+            (self.complete_task)(self.tcs, md);
+        }
+    }
+
+    /// Fails the task with the provided exception, consuming the TCB.
+    pub(crate) fn fail_task(self, exception: ExceptionPtr) {
+        unsafe {
+            (self.fail_task)(self.tcs, exception);
+        }
+    }
+}
+
 /// A utility struct to bridge Rust tokio futures with C# tasks.
 pub(crate) struct BridgedFuture {
     // For now empty - all methods are static.
@@ -204,13 +220,13 @@ impl BridgedFuture {
                         None => ManuallyDestructible::new_null(),
                     };
 
-                    unsafe { (tcb.complete_task)(tcb.tcs, md_void) };
+                    tcb.complete_task(md_void);
                 }
 
                 // On error, fail the task with exception.
                 Ok(Err(err)) => {
                     let exception_ptr = err.to_exception(tcb.constructors);
-                    unsafe { (tcb.fail_task)(tcb.tcs, exception_ptr) };
+                    tcb.fail_task(exception_ptr);
                 }
                 // On panic, fail the task with the panic message.
                 Err(panic) => {
@@ -226,7 +242,7 @@ impl BridgedFuture {
                         .constructors
                         .rust_exception_constructor
                         .construct_from_rust(panic_msg);
-                    unsafe { (tcb.fail_task)(tcb.tcs, exception_ptr) };
+                    tcb.fail_task(exception_ptr);
                 }
             }
         });

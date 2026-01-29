@@ -27,13 +27,13 @@ namespace Cassandra
 
 
         [DllImport("csharp_wrapper", CallingConvention = CallingConvention.Cdecl)]
-        unsafe private static extern void session_create(Tcb tcb, [MarshalAs(UnmanagedType.LPUTF8Str)] string uri);
+        unsafe private static extern void session_create(Tcb<ManuallyDestructible> tcb, [MarshalAs(UnmanagedType.LPUTF8Str)] string uri);
 
         [DllImport("csharp_wrapper", CallingConvention = CallingConvention.Cdecl)]
-        unsafe private static extern void session_shutdown(Tcb tcb, IntPtr session);
+        unsafe private static extern void session_shutdown(Tcb<ManuallyDestructible> tcb, IntPtr session);
 
         [DllImport("csharp_wrapper", CallingConvention = CallingConvention.Cdecl)]
-        unsafe private static extern void session_query(Tcb tcb, IntPtr session, [MarshalAs(UnmanagedType.LPUTF8Str)] string statement);
+        unsafe private static extern void session_query(Tcb<ManuallyDestructible> tcb, IntPtr session, [MarshalAs(UnmanagedType.LPUTF8Str)] string statement);
 
         [DllImport("csharp_wrapper", CallingConvention = CallingConvention.Cdecl)]
         private static extern FFIException session_get_cluster_state(IntPtr sessionPtr, out ManuallyDestructible clusterState, IntPtr constructorsPtr);
@@ -46,16 +46,16 @@ namespace Cassandra
         /// and to free the memory.
         /// </summary>
         [DllImport("csharp_wrapper", CallingConvention = CallingConvention.Cdecl)]
-        unsafe private static extern void session_query_with_values(Tcb tcb, IntPtr session, [MarshalAs(UnmanagedType.LPUTF8Str)] string statement, IntPtr valuesPtr);
+        unsafe private static extern void session_query_with_values(Tcb<ManuallyDestructible> tcb, IntPtr session, [MarshalAs(UnmanagedType.LPUTF8Str)] string statement, IntPtr valuesPtr);
 
         [DllImport("csharp_wrapper", CallingConvention = CallingConvention.Cdecl)]
-        unsafe private static extern void session_prepare(Tcb tcb, IntPtr session, [MarshalAs(UnmanagedType.LPUTF8Str)] string statement);
+        unsafe private static extern void session_prepare(Tcb<ManuallyDestructible> tcb, IntPtr session, [MarshalAs(UnmanagedType.LPUTF8Str)] string statement);
 
         [DllImport("csharp_wrapper", CallingConvention = CallingConvention.Cdecl)]
-        unsafe private static extern void session_query_bound(Tcb tcb, IntPtr session, IntPtr preparedStatement);
+        unsafe private static extern void session_query_bound(Tcb<ManuallyDestructible> tcb, IntPtr session, IntPtr preparedStatement);
 
         [DllImport("csharp_wrapper", CallingConvention = CallingConvention.Cdecl)]
-        unsafe private static extern void session_use_keyspace(Tcb tcb, IntPtr session, [MarshalAs(UnmanagedType.LPUTF8Str)] string keyspace, FFIBool isCaseSensitive);
+        unsafe private static extern void session_use_keyspace(Tcb<ManuallyDestructible> tcb, IntPtr session, [MarshalAs(UnmanagedType.LPUTF8Str)] string keyspace, FFIBool isCaseSensitive);
 
         /// <summary>
         /// Creates a new session connected to the specified Cassandra URI.
@@ -78,7 +78,7 @@ namespace Cassandra
             // in a way that Rust can call it.
             // So we pass a pointer to the method and Rust code will call it via that pointer.
             // This is a common pattern to call C# code from native code ("reversed P/Invoke").
-            Tcb tcb = Tcb.WithTcs(tcs);
+            var tcb = Tcb<ManuallyDestructible>.WithTcs(tcs);
             session_create(tcb, uri);
 
             return tcs.Task;
@@ -90,7 +90,7 @@ namespace Cassandra
         internal Task<ManuallyDestructible> Shutdown()
         {
             TaskCompletionSource<ManuallyDestructible> tcs = new(TaskCreationOptions.RunContinuationsAsynchronously);
-            Tcb tcb = Tcb.WithTcs(tcs);
+            var tcb = Tcb<ManuallyDestructible>.WithTcs(tcs);
             session_shutdown(tcb, handle);
             return tcs.Task;
         }

@@ -77,6 +77,23 @@ namespace Cassandra
             }
         }
 
+        internal interface IBridgedTaskResult
+        {
+            /// <summary>
+            /// This must return a pointer to the appropriate [UnmanagedCallersOnly] CompleteTask method for the result type R.
+            /// This MUST have the following signature:
+            /// unsafe static delegate* unmanaged[Cdecl]&lt;IntPtr tcs, Self this, void&gt;
+            /// </summary>
+            internal static abstract IntPtr CompleteTaskDelegate { get; }
+
+            /// <summary>
+            /// This must return a pointer to the appropriate [UnmanagedCallersOnly] FailTask method for the result type R.
+            /// This MUST have the following signature:
+            /// unsafe static delegate* unmanaged[Cdecl]&lt;IntPtr tcs, FFIException exception_ptr, void&gt;
+            /// </summary>
+            internal static abstract IntPtr FailTaskDelegate { get; }
+        }
+
         /// <summary>
         /// Represents a boolean value passed over FFI boundary.
         /// Used to pass bools between Rust and C#, in both directions.
@@ -103,7 +120,7 @@ namespace Cassandra
         /// All changes to this struct's fields must be mirrored in Rust code in the exact same order.
         /// </summary>
         [StructLayout(LayoutKind.Sequential)]
-        internal readonly struct ManuallyDestructible
+        internal readonly struct ManuallyDestructible : IBridgedTaskResult
         {
             internal readonly IntPtr Ptr;
             internal readonly IntPtr Destructor;
@@ -112,6 +129,71 @@ namespace Cassandra
             {
                 Ptr = ptr;
                 Destructor = destructor;
+            }
+
+            /// <summary>
+            /// This shall be called by Rust code when the operation is completed.
+            /// </summary>
+            // Signature in Rust: extern "C" fn(tcs: *mut c_void, res: ManuallyDestructible)
+            //
+            // This attribute makes the method callable from native code.
+            // It also allows taking a function pointer to the method.
+            [UnmanagedCallersOnly(CallConvs = new Type[] { typeof(CallConvCdecl) })]
+            internal static void CompleteTask(IntPtr tcsPtr, ManuallyDestructible manuallyDestructible)
+            {
+                Tcb<ManuallyDestructible>.CompleteTask(tcsPtr, manuallyDestructible);
+            }
+
+            /// <summary>
+            /// This shall be called by Rust code when the operation failed.
+            /// </summary>
+            //
+            // Signature in Rust: extern "C" fn(tcs: *mut c_void, exception_handle: ExceptionPtr)
+            //
+            // This attribute makes the method callable from native code.
+            // It also allows taking a function pointer to the method.
+            [UnmanagedCallersOnly(CallConvs = new Type[] { typeof(CallConvCdecl) })]
+            internal static void FailTask(IntPtr tcsPtr, FFIException exceptionPtr)
+            {
+                Tcb<ManuallyDestructible>.FailTask(tcsPtr, exceptionPtr);
+            }
+
+
+            // This is the only way to get a function pointer to a method decorated
+            // with [UnmanagedCallersOnly] that I've found to compile.
+            //
+            // The delegates are static to ensure 'static lifetime of the function pointers.
+            // This is important because the Rust code may call the callbacks
+            // long after the P/Invoke call that passed the TCB has returned.
+            // If the delegates were not static, they could be collected by the GC
+            // and the function pointers would become invalid.
+            //
+            // `unsafe` is required to get a function pointer to a static method.
+            // Note that we can get this pointer because the method is static and
+            // decorated with [UnmanagedCallersOnly].
+            internal unsafe readonly static delegate* unmanaged[Cdecl]<IntPtr, ManuallyDestructible, void> completeTaskDel = &CompleteTask;
+            internal unsafe readonly static delegate* unmanaged[Cdecl]<IntPtr, FFIException, void> failTaskDel = &FailTask;
+
+            static IntPtr IBridgedTaskResult.CompleteTaskDelegate
+            {
+                get
+                {
+                    unsafe
+                    {
+                        return (IntPtr)completeTaskDel;
+                    }
+                }
+            }
+
+            static IntPtr IBridgedTaskResult.FailTaskDelegate
+            {
+                get
+                {
+                    unsafe
+                    {
+                        return (IntPtr)failTaskDel;
+                    }
+                }
             }
         }
 
@@ -123,7 +205,7 @@ namespace Cassandra
         /// - squeeze multiple native function parameters into 1.
         /// </summary>
         [StructLayout(LayoutKind.Sequential)]
-        internal readonly struct Tcb
+        internal readonly struct Tcb<R> where R : IBridgedTaskResult
         {
             /// <summary>
             ///  Pointer to a GCHandle referencing a TaskCompletionSource&lt;IntPtr&gt;.
@@ -162,30 +244,12 @@ namespace Cassandra
                 }
             }
 
-            // This is the only way to get a function pointer to a method decorated
-            // with [UnmanagedCallersOnly] that I've found to compile.
-            //
-            // The delegates are static to ensure 'static lifetime of the function pointers.
-            // This is important because the Rust code may call the callbacks
-            // long after the P/Invoke call that passed the TCB has returned.
-            // If the delegates were not static, they could be collected by the GC
-            // and the function pointers would become invalid.
-            //
-            // `unsafe` is required to get a function pointer to a static method.
-            // Note that we can get this pointer because the method is static and
-            // decorated with [UnmanagedCallersOnly].
-            unsafe readonly static delegate* unmanaged[Cdecl]<IntPtr, ManuallyDestructible, void> completeTaskDel = &CompleteTask;
-            unsafe readonly static delegate* unmanaged[Cdecl]<IntPtr, FFIException, void> failTaskDel = &FailTask;
-
             /// <summary>
-            /// Creates a TCB for a TaskCompletionSource&lt;ManuallyDestructible&gt;.
-            /// This is used when the result of the operation is a Rust resource
-            /// that needs to be managed in C#. ManuallyDestructible is a struct that
-            /// holds the native pointer and the destructor function pointer.
+            /// Creates a TCB for a TaskCompletionSource&lt;R&gt;.
             /// </summary>
             /// <param name="tcs"></param>
             /// <returns></returns>
-            internal static Tcb WithTcs(TaskCompletionSource<ManuallyDestructible> tcs)
+            internal static Tcb<R> WithTcs(TaskCompletionSource<R> tcs)
             {
                 /*
                  * Although GC knows that it must not collect items during a synchronous P/Invoke call,
@@ -204,9 +268,124 @@ namespace Cassandra
                 // `unsafe` is required to get a function pointer to a static method.
                 unsafe
                 {
-                    IntPtr completeTaskPtr = (IntPtr)completeTaskDel;
-                    IntPtr failTaskPtr = (IntPtr)failTaskDel;
-                    return new Tcb(tcsPtr, completeTaskPtr, failTaskPtr);
+                    IntPtr completeTaskPtr = R.CompleteTaskDelegate;
+                    IntPtr failTaskPtr = R.FailTaskDelegate;
+                    return new Tcb<R>(tcsPtr, completeTaskPtr, failTaskPtr);
+                }
+            }
+
+            /// <summary>
+            /// This shall be called by Rust code when the operation is completed.
+            /// </summary>
+            // Signature in Rust: extern "C" fn(tcs: *mut c_void, res: R)
+            //
+            // This attribute makes the method callable from native code.
+            // It also allows taking a function pointer to the method.
+            internal static void CompleteTask(IntPtr tcsPtr, R result)
+            {
+                try
+                {
+                    // Recover the GCHandle that was allocated for the TaskCompletionSource.
+                    var handle = GCHandle.FromIntPtr(tcsPtr);
+
+                    if (handle.Target is TaskCompletionSource<R> tcs)
+                    {
+                        // Pass R value back as the result.
+                        // The Rust code is responsible for interpreting the pointer's contents
+                        // memory is freed when the C# RustResource releases it.
+                        tcs.SetResult(result);
+
+                        // Free the handle so the TCS can be collected once no longer used
+                        // by the C# code.
+                        handle.Free();
+
+                        Console.Error.WriteLine($"[FFI] CompleteTask done.");
+                    }
+                    else
+                    {
+                        throw new InvalidOperationException($"GCHandle did not reference a TaskCompletionSource<{typeof(R)}>.");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Environment.FailFast($"[FFI] CompleteTask threw exception: {ex}");
+                }
+            }
+
+            /// <summary>
+            /// This shall be called by Rust code when the operation failed.
+            /// </summary>
+            //
+            // Signature in Rust: extern "C" fn(tcs: *mut c_void, exception_handle: ExceptionPtr)
+            //
+            // This attribute makes the method callable from native code.
+            // It also allows taking a function pointer to the method.
+            internal static void FailTask(IntPtr tcsPtr, FFIException exceptionPtr)
+            {
+                try
+                {
+                    // Recover the GCHandle that was allocated for the TaskCompletionSource.
+                    var handle = GCHandle.FromIntPtr(tcsPtr);
+
+                    if (handle.Target is TaskCompletionSource<R> tcsMd)
+                    {
+                        // Create the exception to pass to the TCS.
+                        Exception exception;
+                        try
+                        {
+                            if (exceptionPtr.exception != IntPtr.Zero)
+                            {
+                                // Recover the exception from the GCHandle passed from Rust.
+                                var exHandle = GCHandle.FromIntPtr(exceptionPtr.exception);
+                                try
+                                {
+                                    if (exHandle.Target is Exception ex)
+                                    {
+                                        exception = ex;
+                                    }
+                                    else
+                                    {
+                                        // This should never happen when everything is working correctly.
+                                        Environment.FailFast("Failed to recover Exception from GCHandle passed from Rust.");
+                                        exception = new RustException("Failed to recover Exception from GCHandle passed from Rust."); // Unreachable, required for compilation
+                                    }
+                                }
+                                finally
+                                {
+                                    if (exHandle.IsAllocated)
+                                    {
+                                        exHandle.Free();
+                                    }
+                                }
+                            }
+                            else
+                            {
+                                // Fallback to a generic RustException if no exception was passed.
+                                exception = new RustException("Unknown error from Rust");
+                            }
+                            tcsMd.SetException(exception);
+                        }
+                        finally
+                        {
+                            // Free the handle so the TCS can be collected once no longer used
+                            // by the C# code.
+                            if (handle.IsAllocated)
+                            {
+                                handle.Free();
+                            }
+                        }
+
+                        Console.Error.WriteLine($"[FFI] FailTask done.");
+
+                    }
+                    else
+                    {
+                        throw new InvalidOperationException($"GCHandle did not reference a TaskCompletionSource<{typeof(R)}>.");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Environment.FailFast($"[FFI] FailTask threw exception: {ex}");
                 }
             }
         }
@@ -323,122 +502,6 @@ namespace Cassandra
                     (IntPtr)TruncateExceptionConstructorPtr,
                     (IntPtr)UnauthorizedExceptionConstructorPtr
                 );
-            }
-        }
-        /// <summary>
-        /// This shall be called by Rust code when the operation is completed.
-        /// </summary>
-        // Signature in Rust: extern "C" fn(tcs: *mut c_void, res: ManuallyDestructible)
-        //
-        // This attribute makes the method callable from native code.
-        // It also allows taking a function pointer to the method.
-        [UnmanagedCallersOnly(CallConvs = new Type[] { typeof(CallConvCdecl) })]
-        internal static void CompleteTask(IntPtr tcsPtr, ManuallyDestructible manuallyDestructible)
-        {
-            try
-            {
-                // Recover the GCHandle that was allocated for the TaskCompletionSource.
-                var handle = GCHandle.FromIntPtr(tcsPtr);
-
-                if (handle.Target is TaskCompletionSource<ManuallyDestructible> tcs)
-                {
-                    // Pass the ManuallyDestructible struct back as the result.
-                    // The Rust code is responsible for interpreting the pointer's contents
-                    // memory is freed when the C# RustResource releases it.
-                    tcs.SetResult(manuallyDestructible);
-
-                    // Free the handle so the TCS can be collected once no longer used
-                    // by the C# code.
-                    handle.Free();
-
-                    Console.Error.WriteLine($"[FFI] CompleteTask done.");
-                }
-                else
-                {
-                    throw new InvalidOperationException("GCHandle did not reference a TaskCompletionSource<ManuallyDestructible>.");
-                }
-            }
-            catch (Exception ex)
-            {
-                Environment.FailFast($"[FFI] CompleteTask threw exception: {ex}");
-            }
-        }
-
-        /// <summary>
-        /// This shall be called by Rust code when the operation failed.
-        /// </summary>
-        //
-        // Signature in Rust: extern "C" fn(tcs: *mut c_void, exception_handle: ExceptionPtr)
-        //
-        // This attribute makes the method callable from native code.
-        // It also allows taking a function pointer to the method.
-        [UnmanagedCallersOnly(CallConvs = new Type[] { typeof(CallConvCdecl) })]
-        internal static void FailTask(IntPtr tcsPtr, FFIException exceptionPtr)
-        {
-            try
-            {
-                // Recover the GCHandle that was allocated for the TaskCompletionSource.
-                var handle = GCHandle.FromIntPtr(tcsPtr);
-
-                if (handle.Target is TaskCompletionSource<ManuallyDestructible> tcsMd)
-                {
-                    // Create the exception to pass to the TCS.
-                    Exception exception;
-                    try
-                    {
-                        if (exceptionPtr.exception != IntPtr.Zero)
-                        {
-                            // Recover the exception from the GCHandle passed from Rust.
-                            var exHandle = GCHandle.FromIntPtr(exceptionPtr.exception);
-                            try
-                            {
-                                if (exHandle.Target is Exception ex)
-                                {
-                                    exception = ex;
-                                }
-                                else
-                                {
-                                    // This should never happen when everything is working correctly.
-                                    Environment.FailFast("Failed to recover Exception from GCHandle passed from Rust.");
-                                    exception = new RustException("Failed to recover Exception from GCHandle passed from Rust."); // Unreachable, required for compilation
-                                }
-                            }
-                            finally
-                            {
-                                if (exHandle.IsAllocated)
-                                {
-                                    exHandle.Free();
-                                }
-                            }
-                        }
-                        else
-                        {
-                            // Fallback to a generic RustException if no exception was passed.
-                            exception = new RustException("Unknown error from Rust");
-                        }
-                        tcsMd.SetException(exception);
-                    }
-                    finally
-                    {
-                        // Free the handle so the TCS can be collected once no longer used
-                        // by the C# code.
-                        if (handle.IsAllocated)
-                        {
-                            handle.Free();
-                        }
-                    }
-
-                    Console.Error.WriteLine($"[FFI] FailTask done.");
-
-                }
-                else
-                {
-                    throw new InvalidOperationException("GCHandle did not reference a TaskCompletionSource<ManuallyDestructible>.");
-                }
-            }
-            catch (Exception ex)
-            {
-                Environment.FailFast($"[FFI] FailTask threw exception: {ex}");
             }
         }
 

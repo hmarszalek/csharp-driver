@@ -21,7 +21,7 @@ namespace Cassandra
             Environment.FailFast("Attempted to use a null RustResource.");
         }
 
-        internal override Task<ManuallyDestructible> RunAsyncWithIncrement<T>(Action<Tcb, IntPtr> invoke)
+        internal override Task<R> RunAsyncWithIncrement<R>(Action<Tcb<R>, IntPtr> invoke)
         {
             Environment.FailFast("Attempted to use a null RustResource.");
             return null;

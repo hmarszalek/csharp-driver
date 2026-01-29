@@ -120,11 +120,11 @@ namespace Cassandra
         }
 
         // For use by the Rust interop code.
-        internal PreparedStatement(ManuallyDestructible mdPreparedStatement, string cql, RowSetMetadata variablesRowsMetadata)
+        internal PreparedStatement(ManuallyDestructible mdPreparedStatement, string cql)
         {
             bridgedPreparedStatement = new BridgedPreparedStatement(mdPreparedStatement);
             bool isLwt = bridgedPreparedStatement.IsLwt();
-            _variablesRowsMetadata = variablesRowsMetadata;
+            _variablesRowsMetadata = bridgedPreparedStatement.ExtractVariablesFromRust();
             Cql = cql;
             _isLwt = isLwt;
         }

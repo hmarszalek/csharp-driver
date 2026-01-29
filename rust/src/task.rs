@@ -1,6 +1,6 @@
 use futures::FutureExt;
 use std::ffi::c_void;
-use std::fmt::{Debug, Display};
+use std::fmt::Debug;
 use std::future::Future;
 use std::panic::AssertUnwindSafe;
 use std::sync::{Arc, LazyLock};
@@ -70,7 +70,7 @@ impl ManuallyDestructible {
 
     pub(crate) fn from_destructible<T: Destructible>(value: Arc<T>) -> Self {
         let ptr = ArcFFI::into_ptr(value).cast_to_void();
-        let destructor = Some(T::void_destructor());
+        let destructor = T::void_destructor();
         ManuallyDestructible::new(ptr, destructor)
     }
 }
@@ -83,8 +83,8 @@ impl Debug for ManuallyDestructible {
 
         f.debug_struct("ManuallyDestructible")
             .field("ptr", &raw_ptr)
-            .field("destructor", &destructor_ptr)
             .field("is_null", &self.ptr.is_null())
+            .field("destructor", &destructor_ptr)
             .finish()
     }
 }
@@ -98,7 +98,7 @@ unsafe impl Send for ManuallyDestructible {}
 /// This is used with `ManuallyDestructible` to ensure proper resource cleanup.
 pub trait Destructible: ArcFFI + Sized + 'static {
     /// Returns an extern "C" function pointer that knows how to free `Self` from a `c_void` pointer.
-    fn void_destructor() -> unsafe extern "C" fn(BridgedOwnedSharedPtr<c_void>) {
+    fn void_destructor() -> Option<unsafe extern "C" fn(BridgedOwnedSharedPtr<c_void>)> {
         extern "C" fn arc_void_free<T: ArcFFI + 'static>(ptr: BridgedOwnedSharedPtr<c_void>) {
             // SAFETY: The pointer was originally produced via `ArcFFI::into_ptr(Arc<T>)`
             // and then cast to `c_void`. Reinterpret cast back to the concrete type and free.
@@ -106,7 +106,7 @@ pub trait Destructible: ArcFFI + Sized + 'static {
             ArcFFI::free(typed_ptr);
         }
 
-        arc_void_free::<Self>
+        Some(arc_void_free::<Self>)
     }
 }
 
@@ -158,6 +158,22 @@ pub struct ExceptionConstructors {
     pub unauthorized_exception_constructor: UnauthorizedExceptionConstructor,
 }
 
+impl Tcb {
+    /// Completes the task with the provided result, consuming the TCB.
+    pub(crate) fn complete_task(self, md: ManuallyDestructible) {
+        unsafe {
+            (self.complete_task)(self.tcs, md);
+        }
+    }
+
+    /// Fails the task with the provided exception, consuming the TCB.
+    pub(crate) fn fail_task(self, exception: ExceptionPtr) {
+        unsafe {
+            (self.fail_task)(self.tcs, exception);
+        }
+    }
+}
+
 /// A utility struct to bridge Rust tokio futures with C# tasks.
 pub(crate) struct BridgedFuture {
     // For now empty - all methods are static.
@@ -177,16 +193,9 @@ impl BridgedFuture {
         F: Future<Output = Result<Option<T>, E>> + Send + 'static,
         T: Send + 'static + ArcFFI + Destructible, // Must be shareable across FFI boundary. For now we only support ArcFFI.
         T: Debug,                                  // Temporarily, for debug prints.
-        E: Debug + Display + ErrorToException, // Error must be printable for logging and exception conversion.
-                                               // The ErrorToException trait is used to convert the error to an exception pointer.
+        E: Debug + ErrorToException, // Error must be printable for logging and exception conversion.
+                                     // The ErrorToException trait is used to convert the error to an exception pointer.
     {
-        let Tcb {
-            tcs,
-            complete_task,
-            fail_task,
-            constructors,
-        } = tcb;
-
         RUNTIME.spawn(async move {
             // Catch panics in the future to prevent unwinding tokio executor thread's stack.
             let result = AssertUnwindSafe(future).catch_unwind().await;
@@ -203,21 +212,18 @@ impl BridgedFuture {
                     let md_void = match res {
                         Some(inner) => {
                             let arced_res = Arc::new(inner);
-                            ManuallyDestructible::new(
-                                ArcFFI::into_ptr(arced_res).cast_to_void(),
-                                Some(T::void_destructor()),
-                            )
+                            ManuallyDestructible::from_destructible(arced_res)
                         }
                         None => ManuallyDestructible::new_null(),
                     };
 
-                    unsafe { complete_task(tcs, md_void) };
+                    tcb.complete_task(md_void);
                 }
 
                 // On error, fail the task with exception.
                 Ok(Err(err)) => {
-                    let exception_ptr = err.to_exception(constructors);
-                    unsafe { fail_task(tcs, exception_ptr) };
+                    let exception_ptr = err.to_exception(tcb.constructors);
+                    tcb.fail_task(exception_ptr);
                 }
                 // On panic, fail the task with the panic message.
                 Err(panic) => {
@@ -229,10 +235,11 @@ impl BridgedFuture {
                     } else {
                         "Weird panic with non-string payload"
                     };
-                    let exception_ptr = constructors
+                    let exception_ptr = tcb
+                        .constructors
                         .rust_exception_constructor
                         .construct_from_rust(panic_msg);
-                    unsafe { fail_task(tcs, exception_ptr) };
+                    tcb.fail_task(exception_ptr);
                 }
             }
         });
@@ -247,23 +254,3 @@ impl BridgedFuture {
         RUNTIME.block_on(future)
     }
 }
-
-/// An error type that can never be instantiated.
-/// Used to represent futures that cannot fail.
-pub(crate) enum ImpossibleError {}
-
-impl std::fmt::Debug for ImpossibleError {
-    fn fmt(&self, _: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match *self {}
-    }
-}
-
-impl std::fmt::Display for ImpossibleError {
-    fn fmt(&self, _: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match *self {}
-    }
-}
-
-#[expect(dead_code)]
-/// A result type for futures that cannot fail.
-pub(crate) struct UnfallibleFutureResult<T>(Result<T, ImpossibleError>);

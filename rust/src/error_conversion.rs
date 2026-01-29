@@ -311,6 +311,13 @@ impl ErrorToException for std::convert::Infallible {
     }
 }
 
+// This allows returning ExceptionPtr directly as an error type in functions that already produce C# exceptions.
+impl ErrorToException for ExceptionPtr {
+    fn to_exception(&self, _ctors: &ExceptionConstructors) -> ExceptionPtr {
+        *self
+    }
+}
+
 // Specific mapping for PagerExecutionError.
 impl ErrorToException for PagerExecutionError {
     fn to_exception(&self, ctors: &ExceptionConstructors) -> ExceptionPtr {

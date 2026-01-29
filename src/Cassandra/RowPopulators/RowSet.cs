@@ -152,15 +152,13 @@ namespace Cassandra
             // TODO: reuse the serializer instance. Perhaps a static instance? Then no need to pass it around by pointer.
             IGenericSerializer serializer = (IGenericSerializer)new GenericSerializer();
 
-            unsafe
+            var hasRow = bridgedRowSet.NextRow(ref values, Columns, ref serializer);
+            if (!hasRow)
             {
-                var hasRow = bridgedRowSet.NextRow(ref values, Columns, ref serializer);
-                if (!hasRow)
-                {
-                    _exhausted = true;
-                    return null;
-                }
+                _exhausted = true;
+                return null;
             }
+
             var columnIndexes = new Dictionary<string, int>(StringComparer.Ordinal);
             for (int i = 0; i < Columns.Length; ++i)
             {

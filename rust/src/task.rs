@@ -180,13 +180,6 @@ impl BridgedFuture {
         E: Debug + Display + ErrorToException, // Error must be printable for logging and exception conversion.
                                                // The ErrorToException trait is used to convert the error to an exception pointer.
     {
-        let Tcb {
-            tcs,
-            complete_task,
-            fail_task,
-            constructors,
-        } = tcb;
-
         RUNTIME.spawn(async move {
             // Catch panics in the future to prevent unwinding tokio executor thread's stack.
             let result = AssertUnwindSafe(future).catch_unwind().await;
@@ -211,13 +204,13 @@ impl BridgedFuture {
                         None => ManuallyDestructible::new_null(),
                     };
 
-                    unsafe { complete_task(tcs, md_void) };
+                    unsafe { (tcb.complete_task)(tcb.tcs, md_void) };
                 }
 
                 // On error, fail the task with exception.
                 Ok(Err(err)) => {
-                    let exception_ptr = err.to_exception(constructors);
-                    unsafe { fail_task(tcs, exception_ptr) };
+                    let exception_ptr = err.to_exception(tcb.constructors);
+                    unsafe { (tcb.fail_task)(tcb.tcs, exception_ptr) };
                 }
                 // On panic, fail the task with the panic message.
                 Err(panic) => {
@@ -229,10 +222,11 @@ impl BridgedFuture {
                     } else {
                         "Weird panic with non-string payload"
                     };
-                    let exception_ptr = constructors
+                    let exception_ptr = tcb
+                        .constructors
                         .rust_exception_constructor
                         .construct_from_rust(panic_msg);
-                    unsafe { fail_task(tcs, exception_ptr) };
+                    unsafe { (tcb.fail_task)(tcb.tcs, exception_ptr) };
                 }
             }
         });

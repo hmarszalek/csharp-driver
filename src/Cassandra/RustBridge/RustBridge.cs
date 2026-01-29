@@ -99,7 +99,7 @@ namespace Cassandra
         /// Used to pass bools between Rust and C#, in both directions.
         /// </summary>
         [StructLayout(LayoutKind.Sequential)]
-        internal readonly struct FFIBool
+        internal readonly struct FFIBool : IBridgedTaskResult
         {
             [MarshalAs(UnmanagedType.U1)]
             private readonly bool value;
@@ -112,6 +112,58 @@ namespace Cassandra
             // Must be public, because `implicit operator` requires it.
             public static implicit operator FFIBool(bool value) => new(value);
             public static implicit operator bool(FFIBool b) => b.value;
+
+            /// <summary>
+            /// This shall be called by Rust code when the operation is completed.
+            /// </summary>
+            // Signature in Rust: extern "C" fn(tcs: *mut c_void, res: bool)
+            //
+            // This attribute makes the method callable from native code.
+            // It also allows taking a function pointer to the method.
+            [UnmanagedCallersOnly(CallConvs = new Type[] { typeof(CallConvCdecl) })]
+            internal static void CompleteTask(IntPtr tcsPtr, FFIBool result)
+            {
+                Tcb<FFIBool>.CompleteTask(tcsPtr, result);
+            }
+
+            /// <summary>
+            /// This shall be called by Rust code when the operation failed.
+            /// </summary>
+            //
+            // Signature in Rust: extern "C" fn(tcs: *mut c_void, exception_handle: ExceptionPtr)
+            //
+            // This attribute makes the method callable from native code.
+            // It also allows taking a function pointer to the method.
+            [UnmanagedCallersOnly(CallConvs = new Type[] { typeof(CallConvCdecl) })]
+            internal static void FailTask(IntPtr tcsPtr, FFIException exceptionPtr)
+            {
+                Tcb<FFIBool>.FailTask(tcsPtr, exceptionPtr);
+            }
+
+            internal unsafe readonly static delegate* unmanaged[Cdecl]<IntPtr, FFIBool, void> completeTaskDel = &CompleteTask;
+            internal unsafe readonly static delegate* unmanaged[Cdecl]<IntPtr, FFIException, void> failTaskDel = &FailTask;
+
+            static IntPtr IBridgedTaskResult.CompleteTaskDelegate
+            {
+                get
+                {
+                    unsafe
+                    {
+                        return (IntPtr)completeTaskDel;
+                    }
+                }
+            }
+
+            static IntPtr IBridgedTaskResult.FailTaskDelegate
+            {
+                get
+                {
+                    unsafe
+                    {
+                        return (IntPtr)failTaskDel;
+                    }
+                }
+            }
         }
 
         /// <summary>

@@ -395,7 +395,7 @@ pub extern "C" fn session_use_keyspace(
 pub extern "C" fn session_get_cluster_state(
     session_ptr: BridgedBorrowedSharedPtr<'_, BridgedSession>,
     out_cluster_state: *mut ManuallyDestructible,
-    constructors: &ExceptionConstructors,
+    constructors: &'static ExceptionConstructors,
 ) -> FfiException {
     let session_arc =
         ArcFFI::as_ref(session_ptr).expect("valid and non-null BridgedSession pointer");

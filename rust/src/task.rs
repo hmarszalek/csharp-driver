@@ -70,7 +70,7 @@ impl ManuallyDestructible {
 
     pub(crate) fn from_destructible<T: Destructible>(value: Arc<T>) -> Self {
         let ptr = ArcFFI::into_ptr(value).cast_to_void();
-        let destructor = Some(T::void_destructor());
+        let destructor = T::void_destructor();
         ManuallyDestructible::new(ptr, destructor)
     }
 }
@@ -98,7 +98,7 @@ unsafe impl Send for ManuallyDestructible {}
 /// This is used with `ManuallyDestructible` to ensure proper resource cleanup.
 pub trait Destructible: ArcFFI + Sized + 'static {
     /// Returns an extern "C" function pointer that knows how to free `Self` from a `c_void` pointer.
-    fn void_destructor() -> unsafe extern "C" fn(BridgedOwnedSharedPtr<c_void>) {
+    fn void_destructor() -> Option<unsafe extern "C" fn(BridgedOwnedSharedPtr<c_void>)> {
         extern "C" fn arc_void_free<T: ArcFFI + 'static>(ptr: BridgedOwnedSharedPtr<c_void>) {
             // SAFETY: The pointer was originally produced via `ArcFFI::into_ptr(Arc<T>)`
             // and then cast to `c_void`. Reinterpret cast back to the concrete type and free.
@@ -106,7 +106,7 @@ pub trait Destructible: ArcFFI + Sized + 'static {
             ArcFFI::free(typed_ptr);
         }
 
-        arc_void_free::<Self>
+        Some(arc_void_free::<Self>)
     }
 }
 

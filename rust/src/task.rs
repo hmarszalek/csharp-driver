@@ -120,10 +120,10 @@ impl<T> Destructible for T where T: ArcFFI + Sized + 'static {}
 /// as well as function pointers to complete (finish successfully)
 /// or fail (set an exception) the task.
 #[repr(C)] // <- Ensure FFI-compatible layout
-pub struct Tcb {
+pub struct Tcb<R> {
     tcs: TcsPtr,
     /// Function pointer type to complete a TaskCompletionSource with a result.
-    complete_task: unsafe extern "C" fn(tcs: TcsPtr, result: ManuallyDestructible),
+    complete_task: unsafe extern "C" fn(tcs: TcsPtr, result: R),
     /// Function pointer type to fail a TaskCompletionSource with an exception handle.
     fail_task: unsafe extern "C" fn(tcs: TcsPtr, exception_handle: ExceptionPtr),
     /// Pointer to the collection of exception constructors.
@@ -155,11 +155,11 @@ pub struct ExceptionConstructors {
     pub unauthorized_exception_constructor: UnauthorizedExceptionConstructor,
 }
 
-impl Tcb {
+impl<R> Tcb<R> {
     /// Completes the task with the provided result, consuming the TCB.
-    pub(crate) fn complete_task(self, md: ManuallyDestructible) {
+    pub(crate) fn complete_task(self, res: R) {
         unsafe {
-            (self.complete_task)(self.tcs, md);
+            (self.complete_task)(self.tcs, res);
         }
     }
 
@@ -185,7 +185,7 @@ impl BridgedFuture {
     /// If the future panics, the panic is caught and reported as an exception to the C# side.
     /// The future must return a Result, where the Ok variant is sent back to C# on success,
     /// and the Err variant is sent back as an exception message.
-    pub(crate) fn spawn<F, T, E>(tcb: Tcb, future: F)
+    pub(crate) fn spawn<F, T, E>(tcb: Tcb<ManuallyDestructible>, future: F)
     where
         F: Future<Output = Result<Option<T>, E>> + Send + 'static,
         T: Send + 'static + ArcFFI + Destructible, // Must be shareable across FFI boundary. For now we only support ArcFFI.

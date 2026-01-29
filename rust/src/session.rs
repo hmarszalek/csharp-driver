@@ -50,7 +50,7 @@ pub extern "C" fn empty_bridged_result_free(ptr: BridgedOwnedSharedPtr<EmptyBrid
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn session_create(tcb: Tcb, uri: CSharpStr<'_>) {
+pub extern "C" fn session_create(tcb: Tcb<ManuallyDestructible>, uri: CSharpStr<'_>) {
     // Convert the raw C string to a Rust string
     let uri = uri.as_cstr().unwrap().to_str().unwrap();
     let uri = uri.to_owned();
@@ -73,7 +73,7 @@ pub extern "C" fn session_create(tcb: Tcb, uri: CSharpStr<'_>) {
 /// This blocks all future queries. Once shutdown, the session cannot be used for queries anymore.
 #[unsafe(no_mangle)]
 pub extern "C" fn session_shutdown(
-    tcb: Tcb,
+    tcb: Tcb<ManuallyDestructible>,
     session_ptr: BridgedBorrowedSharedPtr<'_, BridgedSession>,
 ) {
     // Session pointer being null or invalid implies a serious error on the C# side.
@@ -103,7 +103,7 @@ pub extern "C" fn session_shutdown(
 
 #[unsafe(no_mangle)]
 pub extern "C" fn session_prepare(
-    tcb: Tcb,
+    tcb: Tcb<ManuallyDestructible>,
     session_ptr: BridgedBorrowedSharedPtr<'_, BridgedSession>,
     statement: CSharpStr<'_>,
 ) {
@@ -151,7 +151,7 @@ pub extern "C" fn session_prepare(
 
 #[unsafe(no_mangle)]
 pub extern "C" fn session_query(
-    tcb: Tcb,
+    tcb: Tcb<ManuallyDestructible>,
     session_ptr: BridgedBorrowedSharedPtr<'_, BridgedSession>,
     statement: CSharpStr<'_>,
 ) {
@@ -201,7 +201,7 @@ pub extern "C" fn session_query(
 
 #[unsafe(no_mangle)]
 pub extern "C" fn session_query_with_values(
-    tcb: Tcb,
+    tcb: Tcb<ManuallyDestructible>,
     session_ptr: BridgedBorrowedSharedPtr<'_, BridgedSession>,
     statement: CSharpStr<'_>,
     values_ptr: BridgedOwnedExclusivePtr<PreSerializedValues>,
@@ -265,7 +265,7 @@ pub extern "C" fn session_query_with_values(
 
 #[unsafe(no_mangle)]
 pub extern "C" fn session_query_bound(
-    tcb: Tcb,
+    tcb: Tcb<ManuallyDestructible>,
     session_ptr: BridgedBorrowedSharedPtr<'_, BridgedSession>,
     prepared_statement_ptr: BridgedBorrowedSharedPtr<'_, BridgedPreparedStatement>,
 ) {
@@ -312,7 +312,7 @@ pub extern "C" fn session_query_bound(
 // TO DO: Handle setting keyspace in session_query
 #[unsafe(no_mangle)]
 pub extern "C" fn session_use_keyspace(
-    tcb: Tcb,
+    tcb: Tcb<ManuallyDestructible>,
     session_ptr: BridgedBorrowedSharedPtr<'_, BridgedSession>,
     keyspace: CSharpStr<'_>,
     case_sensitive: bool,

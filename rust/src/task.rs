@@ -257,23 +257,3 @@ impl BridgedFuture {
         RUNTIME.block_on(future)
     }
 }
-
-/// An error type that can never be instantiated.
-/// Used to represent futures that cannot fail.
-pub(crate) enum ImpossibleError {}
-
-impl std::fmt::Debug for ImpossibleError {
-    fn fmt(&self, _: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match *self {}
-    }
-}
-
-impl std::fmt::Display for ImpossibleError {
-    fn fmt(&self, _: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match *self {}
-    }
-}
-
-#[expect(dead_code)]
-/// A result type for futures that cannot fail.
-pub(crate) struct UnfallibleFutureResult<T>(Result<T, ImpossibleError>);

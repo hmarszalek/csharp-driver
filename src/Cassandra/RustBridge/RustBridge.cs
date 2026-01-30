@@ -360,7 +360,7 @@ namespace Cassandra
             }
             catch (Exception ex)
             {
-                Console.Error.WriteLine($"[FFI] CompleteTask threw exception: {ex}");
+                Environment.FailFast($"[FFI] CompleteTask threw exception: {ex}");
             }
         }
 
@@ -438,7 +438,7 @@ namespace Cassandra
             }
             catch (Exception ex)
             {
-                Console.Error.WriteLine($"[FFI] FailTask threw exception: {ex}");
+                Environment.FailFast($"[FFI] FailTask threw exception: {ex}");
             }
         }
 

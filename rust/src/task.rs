@@ -199,17 +199,15 @@ impl BridgedFuture {
     /// Spawns a future onto the global Tokio runtime.
     ///
     /// The future's result is sent back to the C# side using the provided Task Control Block (TCB).
-    /// Thus, the result type `T` must implement `ArcFFI` to be safely shared across the FFI boundary.
-    // TODO: allow BoxFFI types as well.
     /// If the future panics, the panic is caught and reported as an exception to the C# side.
     /// The future must return a Result, where the Ok variant is sent back to C# on success,
-    /// and the Err variant is sent back as an exception message.
-    pub(crate) fn spawn<F, T, E>(tcb: Tcb<ManuallyDestructible>, future: F)
+    /// and the Err variant is sent back as an exception.
+    pub(crate) fn spawn<F, T, E, R>(tcb: Tcb<R>, future: F)
     where
         F: Future<Output = Result<T, E>> + Send + 'static,
         T: Send + 'static, // Result type must be Send to cross threads in tokio runtime.
         T: Debug,          // Temporarily, for debug prints.
-        ManuallyDestructible: From<T>, // Result type must be convertible to ManuallyDestructible for FFI.
+        R: From<T> + 'static,
         E: Debug + ErrorToException, // Error must be printable for logging and exception conversion.
                                      // The ErrorToException trait is used to convert the error to an exception pointer.
     {

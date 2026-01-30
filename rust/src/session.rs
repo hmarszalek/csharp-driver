@@ -56,7 +56,7 @@ pub extern "C" fn session_create(tcb: Tcb<ManuallyDestructible>, uri: CSharpStr<
     let uri = uri.as_cstr().unwrap().to_str().unwrap();
     let uri = uri.to_owned();
 
-    BridgedFuture::spawn::<_, _, NewSessionError>(tcb, async move {
+    BridgedFuture::spawn::<_, _, NewSessionError, _>(tcb, async move {
         tracing::debug!("[FFI] Create Session... {}", uri);
         let session = SessionBuilder::new().known_node(&uri).build().await?;
         tracing::info!("[FFI] Session created! URI: {}", uri);
@@ -83,7 +83,7 @@ pub extern "C" fn session_shutdown(
 
     tracing::trace!("[FFI] Scheduling session shutdown");
 
-    BridgedFuture::spawn::<_, _, Infallible>(tcb, async move {
+    BridgedFuture::spawn::<_, _, Infallible, _>(tcb, async move {
         tracing::debug!("[FFI] Shutting down session");
 
         // Acquire write lock - this will pause the asynchronous execution until all read locks (queries)
@@ -122,7 +122,7 @@ pub extern "C" fn session_prepare(
     // If the operation fails, treat it as session shutting down.
     let session_guard_res = session_arc.try_read_owned();
 
-    BridgedFuture::spawn::<_, _, MaybeShutdownError<PrepareError>>(tcb, async move {
+    BridgedFuture::spawn::<_, _, MaybeShutdownError<PrepareError>, _>(tcb, async move {
         tracing::debug!("[FFI] Preparing statement \"{}\"", statement);
 
         let Ok(session_guard) = session_guard_res else {
@@ -170,7 +170,7 @@ pub extern "C" fn session_query(
     // If the operation fails, treat it as session shutting down.
     let session_guard_res = session_arc.try_read_owned();
 
-    BridgedFuture::spawn::<_, _, MaybeShutdownError<PagerExecutionError>>(tcb, async move {
+    BridgedFuture::spawn::<_, _, MaybeShutdownError<PagerExecutionError>, _>(tcb, async move {
         tracing::debug!("[FFI] Executing statement \"{}\"", statement);
 
         let Ok(session_guard) = session_guard_res else {
@@ -223,7 +223,7 @@ pub extern "C" fn session_query_with_values(
     // If the operation fails, treat it as session shutting down.
     let session_guard_res = session_arc.try_read_owned();
 
-    BridgedFuture::spawn::<_, _, MaybeShutdownError<PagerExecutionError>>(tcb, async move {
+    BridgedFuture::spawn::<_, _, MaybeShutdownError<PagerExecutionError>, _>(tcb, async move {
         tracing::debug!(
             "[FFI] Preparing and executing statement with pre-serialized values \"{}\"",
             statement
@@ -280,7 +280,7 @@ pub extern "C" fn session_query_bound(
     // If the operation fails, treat it as session shutting down.
     let session_guard_res = session_arc.try_read_owned();
 
-    BridgedFuture::spawn::<_, _, MaybeShutdownError<PagerExecutionError>>(tcb, async move {
+    BridgedFuture::spawn::<_, _, MaybeShutdownError<PagerExecutionError>, _>(tcb, async move {
         tracing::debug!("[FFI] Executing prepared statement");
 
         let Ok(session_guard) = session_guard_res else {
@@ -333,7 +333,7 @@ pub extern "C" fn session_use_keyspace(
     let session_guard_res = session_arc.try_read_owned();
 
     // TODO: replace PagerExecutionError with UseKeyspaceError.
-    BridgedFuture::spawn::<_, _, MaybeShutdownError<PagerExecutionError>>(tcb, async move {
+    BridgedFuture::spawn::<_, _, MaybeShutdownError<PagerExecutionError>, _>(tcb, async move {
         tracing::debug!("[FFI] Executing use_keyspace \"{}\"", keyspace);
 
         let Ok(session_guard) = session_guard_res else {

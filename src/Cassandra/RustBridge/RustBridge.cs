@@ -80,7 +80,7 @@ namespace Cassandra
     /// All changes to this struct's fields must be mirrored in Rust code in the exact same order.
     /// </summary>
     [StructLayout(LayoutKind.Sequential)]
-    public readonly struct ManuallyDestructible
+    internal readonly struct ManuallyDestructible
     {
         internal readonly IntPtr Ptr;
         internal readonly IntPtr Destructor;

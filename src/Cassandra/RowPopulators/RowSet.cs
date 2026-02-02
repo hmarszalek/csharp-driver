@@ -121,7 +121,7 @@ namespace Cassandra
         /// <summary>
         /// Creates a new instance of RowSet.
         /// </summary>
-        public RowSet(ManuallyDestructible mdRowSet)
+        internal RowSet(ManuallyDestructible mdRowSet)
         {
             bridgedRowSet = new BridgedRowSet(mdRowSet);
             Columns = bridgedRowSet.ExtractColumnsFromRust();

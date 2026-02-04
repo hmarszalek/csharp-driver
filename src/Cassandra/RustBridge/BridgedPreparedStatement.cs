@@ -1,6 +1,7 @@
 using System;
 
 using System.Runtime.InteropServices;
+using static Cassandra.RustBridge;
 
 namespace Cassandra
 {
@@ -16,12 +17,12 @@ namespace Cassandra
 
         internal bool IsLwt()
         {
-            bool isLwt = false;
+            FFIBool isLwt = false;
             RunWithIncrement(handle => prepared_statement_is_lwt(handle, out isLwt));
             return isLwt;
         }
 
         [DllImport("csharp_wrapper", CallingConvention = CallingConvention.Cdecl)]
-        unsafe private static extern RustBridge.FfiException prepared_statement_is_lwt(IntPtr prepared_statement, [MarshalAs(UnmanagedType.U1)] out bool isLwt);
+        unsafe private static extern FFIException prepared_statement_is_lwt(IntPtr prepared_statement, out FFIBool isLwt);
     }
 }

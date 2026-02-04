@@ -1,6 +1,7 @@
 using System;
 using System.Runtime.InteropServices;
 using System.Threading.Tasks;
+using static Cassandra.RustBridge;
 
 namespace Cassandra
 {
@@ -60,11 +61,10 @@ namespace Cassandra
         /// Using this method ensures that the handle remains valid for the duration of the native call.
         /// Invoke must be a function that takes a Tcb and IntPtr (the handle) and performs the native call.
         /// </summary>
-        /// <typeparam name="T"></typeparam>
+        /// <typeparam name="R"></typeparam>
         /// <param name="invoke"></param>
         /// <returns></returns>
-        /// <exception cref="NotSupportedException"></exception>
-        internal virtual Task<ManuallyDestructible> RunAsyncWithIncrement<T>(Action<Tcb, IntPtr> invoke)
+        internal virtual Task<R> RunAsyncWithIncrement<R>(Action<Tcb<R>, IntPtr> invoke) where R : IBridgedTaskResult
         {
             bool refAdded = false;
             try
@@ -76,7 +76,7 @@ namespace Cassandra
                 * We create one here and pass it to Rust code, which will complete it.
                 * This is a common pattern to bridge async code between C# and native code.
                 */
-                var tcs = new TaskCompletionSource<ManuallyDestructible>(TaskCreationOptions.RunContinuationsAsynchronously);
+                var tcs = new TaskCompletionSource<R>(TaskCreationOptions.RunContinuationsAsynchronously);
 
                 // Invoke the native code, which will complete the TCS when done.
                 // We need to pass a pointer to CompleteTask because Rust code cannot directly
@@ -86,9 +86,9 @@ namespace Cassandra
                 // in a way that Rust can call it.
                 // So we pass a pointer to the method and Rust code will call it via that pointer.
                 // This is a common pattern to call C# code from native code ("reversed P/Invoke").
-                var tcb = Tcb.WithTcs(tcs);
+                var tcb = Tcb<R>.WithTcs(tcs);
                 invoke(tcb, handle);
-                return (Task<ManuallyDestructible>)(object)tcs.Task;
+                return tcs.Task;
             }
             finally
             {
@@ -107,15 +107,16 @@ namespace Cassandra
         /// If the exception is not null, it will be thrown.
         /// </summary>
         /// <param name="invoke"></param>
-        internal virtual void RunWithIncrement(Func<IntPtr, RustBridge.FfiException> invoke)
+        internal virtual void RunWithIncrement(Func<IntPtr, RustBridge.FFIException> invoke)
         {
             bool refAdded = false;
-            RustBridge.FfiException exception;
+            RustBridge.FFIException exception;
             try
             {
                 DangerousAddRef(ref refAdded);
                 exception = invoke(handle);
-                try {
+                try
+                {
                     RustBridge.ThrowIfException(ref exception);
                 }
                 finally

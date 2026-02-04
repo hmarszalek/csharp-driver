@@ -1,4 +1,5 @@
 use std::convert::Infallible;
+use std::sync::Arc;
 
 use scylla::client::session::Session;
 use scylla::client::session_builder::SessionBuilder;
@@ -50,12 +51,12 @@ pub extern "C" fn empty_bridged_result_free(ptr: BridgedOwnedSharedPtr<EmptyBrid
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn session_create(tcb: Tcb, uri: CSharpStr<'_>) {
+pub extern "C" fn session_create(tcb: Tcb<ManuallyDestructible>, uri: CSharpStr<'_>) {
     // Convert the raw C string to a Rust string
     let uri = uri.as_cstr().unwrap().to_str().unwrap();
     let uri = uri.to_owned();
 
-    BridgedFuture::spawn::<_, _, NewSessionError>(tcb, async move {
+    BridgedFuture::spawn::<_, _, NewSessionError, _>(tcb, async move {
         tracing::debug!("[FFI] Create Session... {}", uri);
         let session = SessionBuilder::new().known_node(&uri).build().await?;
         tracing::info!("[FFI] Session created! URI: {}", uri);
@@ -63,7 +64,7 @@ pub extern "C" fn session_create(tcb: Tcb, uri: CSharpStr<'_>) {
             "[FFI] Contacted node's address: {}",
             session.get_cluster_state().get_nodes_info()[0].address
         );
-        Ok(Some(RwLock::new(BridgedSessionInner {
+        Ok(Arc::new(RwLock::new(BridgedSessionInner {
             session: Some(session),
         })))
     })
@@ -73,7 +74,7 @@ pub extern "C" fn session_create(tcb: Tcb, uri: CSharpStr<'_>) {
 /// This blocks all future queries. Once shutdown, the session cannot be used for queries anymore.
 #[unsafe(no_mangle)]
 pub extern "C" fn session_shutdown(
-    tcb: Tcb,
+    tcb: Tcb<ManuallyDestructible>,
     session_ptr: BridgedBorrowedSharedPtr<'_, BridgedSession>,
 ) {
     // Session pointer being null or invalid implies a serious error on the C# side.
@@ -82,7 +83,7 @@ pub extern "C" fn session_shutdown(
 
     tracing::trace!("[FFI] Scheduling session shutdown");
 
-    BridgedFuture::spawn::<_, _, Infallible>(tcb, async move {
+    BridgedFuture::spawn::<_, _, Infallible, _>(tcb, async move {
         tracing::debug!("[FFI] Shutting down session");
 
         // Acquire write lock - this will pause the asynchronous execution until all read locks (queries)
@@ -96,14 +97,15 @@ pub extern "C" fn session_shutdown(
         session_guard.session = None;
         tracing::info!("[FFI] Session shutdown complete");
 
-        // Return an EmptyBridgedResult to satisfy the return type
-        Ok(None::<EmptyBridgedResult>)
+        // Return None, providing BridgedSession just to satisfy the type constraints.
+        // This is temporary and will be replaced with a proper non-allocating empty result type.
+        Ok(None::<Arc<BridgedSession>>)
     })
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn session_prepare(
-    tcb: Tcb,
+    tcb: Tcb<ManuallyDestructible>,
     session_ptr: BridgedBorrowedSharedPtr<'_, BridgedSession>,
     statement: CSharpStr<'_>,
 ) {
@@ -120,7 +122,7 @@ pub extern "C" fn session_prepare(
     // If the operation fails, treat it as session shutting down.
     let session_guard_res = session_arc.try_read_owned();
 
-    BridgedFuture::spawn::<_, _, MaybeShutdownError<PrepareError>>(tcb, async move {
+    BridgedFuture::spawn::<_, _, MaybeShutdownError<PrepareError>, _>(tcb, async move {
         tracing::debug!("[FFI] Preparing statement \"{}\"", statement);
 
         let Ok(session_guard) = session_guard_res else {
@@ -145,20 +147,19 @@ pub extern "C" fn session_prepare(
 
         tracing::trace!("[FFI] Statement prepared");
 
-        Ok(Some(BridgedPreparedStatement { inner: ps }))
+        Ok(Arc::new(BridgedPreparedStatement { inner: ps }))
     })
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn session_query(
-    tcb: Tcb,
+    tcb: Tcb<ManuallyDestructible>,
     session_ptr: BridgedBorrowedSharedPtr<'_, BridgedSession>,
     statement: CSharpStr<'_>,
 ) {
     // Convert the raw C string to a Rust string.
     let statement = statement.as_cstr().unwrap().to_str().unwrap().to_owned();
     let session_arc = ArcFFI::cloned_from_ptr(session_ptr).unwrap();
-    //TODO: use safe error propagation mechanism
 
     tracing::trace!(
         "[FFI] Scheduling statement for execution: \"{}\"",
@@ -169,7 +170,7 @@ pub extern "C" fn session_query(
     // If the operation fails, treat it as session shutting down.
     let session_guard_res = session_arc.try_read_owned();
 
-    BridgedFuture::spawn::<_, _, MaybeShutdownError<PagerExecutionError>>(tcb, async move {
+    BridgedFuture::spawn::<_, _, MaybeShutdownError<PagerExecutionError>, _>(tcb, async move {
         tracing::debug!("[FFI] Executing statement \"{}\"", statement);
 
         let Ok(session_guard) = session_guard_res else {
@@ -194,7 +195,7 @@ pub extern "C" fn session_query(
 
         tracing::trace!("[FFI] Statement executed");
 
-        Ok(Some(RowSet {
+        Ok(Arc::new(RowSet {
             pager: std::sync::Mutex::new(Some(query_pager)),
         }))
     });
@@ -202,7 +203,7 @@ pub extern "C" fn session_query(
 
 #[unsafe(no_mangle)]
 pub extern "C" fn session_query_with_values(
-    tcb: Tcb,
+    tcb: Tcb<ManuallyDestructible>,
     session_ptr: BridgedBorrowedSharedPtr<'_, BridgedSession>,
     statement: CSharpStr<'_>,
     values_ptr: BridgedOwnedExclusivePtr<PreSerializedValues>,
@@ -222,7 +223,7 @@ pub extern "C" fn session_query_with_values(
     // If the operation fails, treat it as session shutting down.
     let session_guard_res = session_arc.try_read_owned();
 
-    BridgedFuture::spawn::<_, _, MaybeShutdownError<PagerExecutionError>>(tcb, async move {
+    BridgedFuture::spawn::<_, _, MaybeShutdownError<PagerExecutionError>, _>(tcb, async move {
         tracing::debug!(
             "[FFI] Preparing and executing statement with pre-serialized values \"{}\"",
             statement
@@ -258,7 +259,7 @@ pub extern "C" fn session_query_with_values(
 
         tracing::trace!("[FFI] Prepared statement executed with pre-serialized values");
 
-        Ok(Some(RowSet {
+        Ok(Arc::new(RowSet {
             pager: std::sync::Mutex::new(Some(query_pager)),
         }))
     });
@@ -266,7 +267,7 @@ pub extern "C" fn session_query_with_values(
 
 #[unsafe(no_mangle)]
 pub extern "C" fn session_query_bound(
-    tcb: Tcb,
+    tcb: Tcb<ManuallyDestructible>,
     session_ptr: BridgedBorrowedSharedPtr<'_, BridgedSession>,
     prepared_statement_ptr: BridgedBorrowedSharedPtr<'_, BridgedPreparedStatement>,
 ) {
@@ -279,7 +280,7 @@ pub extern "C" fn session_query_bound(
     // If the operation fails, treat it as session shutting down.
     let session_guard_res = session_arc.try_read_owned();
 
-    BridgedFuture::spawn::<_, _, MaybeShutdownError<PagerExecutionError>>(tcb, async move {
+    BridgedFuture::spawn::<_, _, MaybeShutdownError<PagerExecutionError>, _>(tcb, async move {
         tracing::debug!("[FFI] Executing prepared statement");
 
         let Ok(session_guard) = session_guard_res else {
@@ -304,7 +305,7 @@ pub extern "C" fn session_query_bound(
 
         tracing::trace!("[FFI] Prepared statement executed");
 
-        Ok(Some(RowSet {
+        Ok(Arc::new(RowSet {
             pager: std::sync::Mutex::new(Some(query_pager)),
         }))
     })
@@ -313,7 +314,7 @@ pub extern "C" fn session_query_bound(
 // TO DO: Handle setting keyspace in session_query
 #[unsafe(no_mangle)]
 pub extern "C" fn session_use_keyspace(
-    tcb: Tcb,
+    tcb: Tcb<ManuallyDestructible>,
     session_ptr: BridgedBorrowedSharedPtr<'_, BridgedSession>,
     keyspace: CSharpStr<'_>,
     case_sensitive: bool,
@@ -331,7 +332,8 @@ pub extern "C" fn session_use_keyspace(
     // If the operation fails, treat it as session shutting down.
     let session_guard_res = session_arc.try_read_owned();
 
-    BridgedFuture::spawn::<_, _, MaybeShutdownError<PagerExecutionError>>(tcb, async move {
+    // TODO: replace PagerExecutionError with UseKeyspaceError.
+    BridgedFuture::spawn::<_, _, MaybeShutdownError<PagerExecutionError>, _>(tcb, async move {
         tracing::debug!("[FFI] Executing use_keyspace \"{}\"", keyspace);
 
         let Ok(session_guard) = session_guard_res else {
@@ -381,7 +383,7 @@ pub extern "C" fn session_use_keyspace(
             })?;
 
         tracing::trace!("[FFI] use_keyspace executed successfully");
-        Ok(Some(RowSet::empty()))
+        Ok(Arc::new(RowSet::empty()))
     })
 }
 
@@ -395,7 +397,7 @@ pub extern "C" fn session_use_keyspace(
 pub extern "C" fn session_get_cluster_state(
     session_ptr: BridgedBorrowedSharedPtr<'_, BridgedSession>,
     out_cluster_state: *mut ManuallyDestructible,
-    constructors: &ExceptionConstructors,
+    constructors: &'static ExceptionConstructors,
 ) -> FfiException {
     let session_arc =
         ArcFFI::as_ref(session_ptr).expect("valid and non-null BridgedSession pointer");

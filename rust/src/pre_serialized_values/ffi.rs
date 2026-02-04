@@ -19,7 +19,7 @@ pub unsafe extern "C" fn pre_serialized_values_add_value(
     values_ptr: BridgedBorrowedExclusivePtr<'_, PreSerializedValues>,
     value_ptr: CsharpValuePtr,
     value_len: usize,
-    constructors: &ExceptionConstructors,
+    constructors: &'static ExceptionConstructors,
 ) -> FfiException {
     let Some(values) = BoxFFI::as_mut_ref(values_ptr) else {
         panic!("invalid PreSerializedValues pointer in pre_serialized_values_add_value");
@@ -35,7 +35,7 @@ pub unsafe extern "C" fn pre_serialized_values_add_value(
 #[unsafe(no_mangle)]
 pub extern "C" fn pre_serialized_values_add_null(
     values_ptr: BridgedBorrowedExclusivePtr<'_, PreSerializedValues>,
-    constructors: &ExceptionConstructors,
+    constructors: &'static ExceptionConstructors,
 ) -> FfiException {
     let Some(values) = BoxFFI::as_mut_ref(values_ptr) else {
         panic!("invalid PreSerializedValues pointer in pre_serialized_values_add_null");
@@ -50,7 +50,7 @@ pub extern "C" fn pre_serialized_values_add_null(
 #[unsafe(no_mangle)]
 pub extern "C" fn pre_serialized_values_add_unset(
     values_ptr: BridgedBorrowedExclusivePtr<'_, PreSerializedValues>,
-    constructors: &ExceptionConstructors,
+    constructors: &'static ExceptionConstructors,
 ) -> FfiException {
     let Some(values) = BoxFFI::as_mut_ref(values_ptr) else {
         panic!("invalid PreSerializedValues pointer in pre_serialized_values_add_unset");

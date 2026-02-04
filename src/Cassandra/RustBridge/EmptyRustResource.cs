@@ -2,6 +2,7 @@ using System;
 
 using System.Runtime.InteropServices;
 using System.Threading.Tasks;
+using static Cassandra.RustBridge;
 
 namespace Cassandra
 {
@@ -15,12 +16,12 @@ namespace Cassandra
         {
         }
 
-        internal override void RunWithIncrement(Func<IntPtr, RustBridge.FfiException> invoke)
+        internal override void RunWithIncrement(Func<IntPtr, RustBridge.FFIException> invoke)
         {
             Environment.FailFast("Attempted to use a null RustResource.");
         }
 
-        internal override Task<ManuallyDestructible> RunAsyncWithIncrement<T>(Action<Tcb, IntPtr> invoke)
+        internal override Task<R> RunAsyncWithIncrement<R>(Action<Tcb<R>, IntPtr> invoke)
         {
             Environment.FailFast("Attempted to use a null RustResource.");
             return null;

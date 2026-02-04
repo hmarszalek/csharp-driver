@@ -113,11 +113,24 @@ pub trait Destructible: ArcFFI + Sized + 'static {
 // Blanket impl: any ArcFFI type is destructible via the generic c_void destructor.
 impl<T> Destructible for T where T: ArcFFI + Sized + 'static {}
 
-/// Function pointer type to complete a TaskCompletionSource with a result.
-type CompleteTask = unsafe extern "C" fn(tcs: TcsPtr, result: ManuallyDestructible);
+// Blanket From impl to convert Arc<T> into ManuallyDestructible that stores T.
+impl<T: Destructible> From<Arc<T>> for ManuallyDestructible {
+    fn from(value: Arc<T>) -> Self {
+        Self::from_destructible(value)
+    }
+}
 
-/// Function pointer type to fail a TaskCompletionSource with an exception handle.
-type FailTask = unsafe extern "C" fn(tcs: TcsPtr, exception_handle: ExceptionPtr);
+// TEMPORARY blanket From impl to convert Option<Arc<T>> into ManuallyDestructible that stores T.
+// This will be deleted, because we'll no longer need ManuallyDestructible to represent trivial values
+// after we make Tcb generic over the result type.
+impl<T: Destructible> From<Option<Arc<T>>> for ManuallyDestructible {
+    fn from(value: Option<Arc<T>>) -> Self {
+        match value {
+            Some(v) => Self::from_destructible(v),
+            None => ManuallyDestructible::new_null(),
+        }
+    }
+}
 
 /// **Task Control Block** (TCB)
 ///
@@ -126,10 +139,13 @@ type FailTask = unsafe extern "C" fn(tcs: TcsPtr, exception_handle: ExceptionPtr
 /// as well as function pointers to complete (finish successfully)
 /// or fail (set an exception) the task.
 #[repr(C)] // <- Ensure FFI-compatible layout
-pub struct Tcb {
+pub struct Tcb<R> {
     tcs: TcsPtr,
-    complete_task: CompleteTask,
-    fail_task: FailTask,
+    /// Function pointer type to complete a TaskCompletionSource with a result.
+    complete_task: unsafe extern "C" fn(tcs: TcsPtr, result: R),
+    /// Function pointer type to fail a TaskCompletionSource with an exception handle.
+    fail_task: unsafe extern "C" fn(tcs: TcsPtr, exception_handle: ExceptionPtr),
+    /// Pointer to the collection of exception constructors.
     // SAFETY: The memory is a leaked unmanaged allocation on the C# side.
     // This guarantees that the pointer remains valid and is not moved or deallocated.
     constructors: &'static ExceptionConstructors,
@@ -158,11 +174,11 @@ pub struct ExceptionConstructors {
     pub unauthorized_exception_constructor: UnauthorizedExceptionConstructor,
 }
 
-impl Tcb {
+impl<R> Tcb<R> {
     /// Completes the task with the provided result, consuming the TCB.
-    pub(crate) fn complete_task(self, md: ManuallyDestructible) {
+    pub(crate) fn complete_task(self, res: R) {
         unsafe {
-            (self.complete_task)(self.tcs, md);
+            (self.complete_task)(self.tcs, res);
         }
     }
 
@@ -183,16 +199,15 @@ impl BridgedFuture {
     /// Spawns a future onto the global Tokio runtime.
     ///
     /// The future's result is sent back to the C# side using the provided Task Control Block (TCB).
-    /// Thus, the result type `T` must implement `ArcFFI` to be safely shared across the FFI boundary.
-    // TODO: allow BoxFFI types as well.
     /// If the future panics, the panic is caught and reported as an exception to the C# side.
     /// The future must return a Result, where the Ok variant is sent back to C# on success,
-    /// and the Err variant is sent back as an exception message.
-    pub(crate) fn spawn<F, T, E>(tcb: Tcb, future: F)
+    /// and the Err variant is sent back as an exception.
+    pub(crate) fn spawn<F, T, E, R>(tcb: Tcb<R>, future: F)
     where
-        F: Future<Output = Result<Option<T>, E>> + Send + 'static,
-        T: Send + 'static + ArcFFI + Destructible, // Must be shareable across FFI boundary. For now we only support ArcFFI.
-        T: Debug,                                  // Temporarily, for debug prints.
+        F: Future<Output = Result<T, E>> + Send + 'static,
+        T: Send + 'static, // Result type must be Send to cross threads in tokio runtime.
+        T: Debug,          // Temporarily, for debug prints.
+        R: From<T> + 'static,
         E: Debug + ErrorToException, // Error must be printable for logging and exception conversion.
                                      // The ErrorToException trait is used to convert the error to an exception pointer.
     {
@@ -209,15 +224,7 @@ impl BridgedFuture {
             match result {
                 // On success, complete the task with the result.
                 Ok(Ok(res)) => {
-                    let md_void = match res {
-                        Some(inner) => {
-                            let arced_res = Arc::new(inner);
-                            ManuallyDestructible::from_destructible(arced_res)
-                        }
-                        None => ManuallyDestructible::new_null(),
-                    };
-
-                    tcb.complete_task(md_void);
+                    tcb.complete_task(res.into());
                 }
 
                 // On error, fail the task with exception.

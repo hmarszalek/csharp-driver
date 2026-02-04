@@ -81,7 +81,7 @@ pub extern "C" fn row_set_fill_columns_metadata(
     row_set_ptr: BridgedBorrowedSharedPtr<'_, RowSet>,
     columns_ptr: ColumnsPtr,
     set_metadata: SetMetadata,
-    constructors: &ExceptionConstructors,
+    constructors: &'static ExceptionConstructors,
 ) -> FfiException {
     let row_set = ArcFFI::as_ref(row_set_ptr).unwrap();
     let pager_guard = row_set.pager.lock().unwrap();
@@ -171,7 +171,7 @@ pub extern "C" fn row_set_next_row<'row_set>(
     values_ptr: ValuesPtr,
     serializer_ptr: SerializerPtr,
     out_has_row: *mut bool,
-    constructors: &ExceptionConstructors,
+    constructors: &'static ExceptionConstructors,
 ) -> FfiException {
     let row_set = ArcFFI::as_ref(row_set_ptr).unwrap();
     let mut pager_guard = row_set.pager.lock().unwrap();

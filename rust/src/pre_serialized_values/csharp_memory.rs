@@ -23,9 +23,9 @@ impl CsharpValuePtr {
 
 /// A pre-serialized value from C#, holding the buffer pointer and length.
 /// The C# side is responsible for keeping the memory valid.
-pub struct CsharpSerializedValue {
-    pub ptr: CsharpValuePtr,
-    pub len: usize,
+pub(crate) struct CsharpSerializedValue {
+    pub(crate) ptr: CsharpValuePtr,
+    pub(crate) len: usize,
 }
 
 impl CsharpSerializedValue {

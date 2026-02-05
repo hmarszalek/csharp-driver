@@ -133,21 +133,18 @@ pub extern "C" fn row_set_fill_columns_metadata(
     FfiException::ok()
 }
 
-#[derive(Clone, Copy)]
 enum Columns {}
 
 #[repr(transparent)]
 #[derive(Clone, Copy)]
 pub struct ColumnsPtr(FFIPtr<'static, Columns>);
 
-#[derive(Clone, Copy)]
 enum Values {}
 
 #[derive(Clone, Copy)]
 #[repr(transparent)]
 pub struct ValuesPtr(FFIPtr<'static, Values>);
 
-#[derive(Clone, Copy)]
 enum Serializer {}
 
 #[derive(Clone, Copy)]

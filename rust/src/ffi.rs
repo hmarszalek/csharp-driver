@@ -661,11 +661,20 @@ impl<'a> FFIStr<'a> {
 }
 
 #[repr(transparent)]
-#[derive(Clone, Copy)]
 pub struct FFIPtr<'a, T: Sized> {
     ptr: Option<NonNull<T>>,
     _phantom: PhantomData<&'a ()>,
 }
+
+// Manual implementation to avoid `T: Clone` bound.
+impl<T> Clone for FFIPtr<'_, T> {
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+
+// Manual implementation to avoid `T: Copy` bound.
+impl<T> Copy for FFIPtr<'_, T> {}
 
 // Compile-time assertion that `FFIPtr` is pointer-sized.
 // Ensures ABI compatibility with C# (opaque GCHandle/IntPtr across FFI).

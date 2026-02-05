@@ -1,5 +1,4 @@
-use super::csharp_memory::CsharpSerializedValue;
-use crate::ffi::{FFI, FromBox};
+use crate::ffi::{FFI, FFIByteSlice, FromBox};
 use scylla_cql::frame::response::result::{ColumnType, NativeType};
 use scylla_cql::serialize::SerializationError;
 use scylla_cql::serialize::row::SerializedValues;
@@ -8,25 +7,24 @@ use scylla_cql::serialize::writers::CellWriter;
 
 /// A single pre-serialized cell: either a C#-backed value, or a
 /// logical null/unset marker.
-pub enum PreSerializedCell {
-    Value(CsharpSerializedValue),
+pub enum PreSerializedCell<'a> {
+    Value(FFIByteSlice<'a>),
     Null,
     Unset,
 }
 
 /// Thin wrapper describing a pre-serialized C# value by its pointer and length.
 /// The C# side is responsible for ensuring the pointer stays valid during serialization.
-impl SerializeValue for PreSerializedCell {
+impl SerializeValue for PreSerializedCell<'_> {
     fn serialize<'b>(
         &self,
         _typ: &ColumnType,
         writer: CellWriter<'b>,
     ) -> Result<scylla_cql::serialize::writers::WrittenCellProof<'b>, SerializationError> {
         match self {
-            PreSerializedCell::Value(val) => {
-                let slice = unsafe { val.as_slice() };
-                writer.set_value(slice).map_err(SerializationError::new)
-            }
+            PreSerializedCell::Value(val) => writer
+                .set_value(val.as_slice())
+                .map_err(SerializationError::new),
             PreSerializedCell::Null => Ok(writer.set_null()),
             PreSerializedCell::Unset => Ok(writer.set_unset()),
         }
@@ -51,17 +49,12 @@ impl PreSerializedValues {
         self.serialized_values
     }
 
-    /// Add a pre-serialized value described by a `CsharpSerializedValue`.
+    /// Add a value that was pre-serialized by C#.
     ///
     /// Safety:
-    /// - The C# buffer pointed to by `value.ptr` must remain valid and pinned for the duration
+    /// - The C# buffer pointed to by `value` must remain valid and pinned for the duration
     ///   of this call. The data is copied into the internal buffer immediately.
-    /// - If `value.len > 0`, then `value.ptr` must be non-null and point to at least `len`
-    ///   bytes of initialized memory.
-    pub(super) unsafe fn add_value(
-        &mut self,
-        value: CsharpSerializedValue,
-    ) -> Result<(), SerializationError> {
+    pub(super) fn add_value(&mut self, value: FFIByteSlice<'_>) -> Result<(), SerializationError> {
         let cell = PreSerializedCell::Value(value);
         self.serialized_values.add_value(&cell, dummy_column_type())
     }

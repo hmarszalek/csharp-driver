@@ -620,6 +620,19 @@ impl<'a> FFIByteSlice<'a> {
         };
         FFIByteSlice { ptr, len: s.len() }
     }
+
+    pub(crate) fn as_slice(&self) -> &[u8] {
+        if self.len == 0 {
+            return &[];
+        }
+
+        unsafe {
+            std::slice::from_raw_parts(
+                self.ptr.ptr.expect("non-null slice pointer").as_ptr(),
+                self.len,
+            )
+        }
+    }
 }
 
 /// Represents a string passed over FFI from Rust to C#.

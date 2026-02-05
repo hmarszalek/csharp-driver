@@ -1,5 +1,5 @@
 use crate::error_conversion::FfiException;
-use crate::ffi::{ArcFFI, BridgedBorrowedSharedPtr, FFI, FFIStr, FfiPtr, FromArc, RefFFI};
+use crate::ffi::{ArcFFI, BridgedBorrowedSharedPtr, FFI, FFIPtr, FFIStr, FromArc, RefFFI};
 use crate::row_set::column_type_to_code;
 use scylla::frame::response::result::ColumnType;
 use scylla::statement::prepared::PreparedStatement;
@@ -47,7 +47,7 @@ enum Columns {}
 
 #[repr(transparent)]
 #[derive(Clone, Copy)]
-pub struct ColumnsPtr(FfiPtr<'static, Columns>);
+pub struct ColumnsPtr(FFIPtr<'static, Columns>);
 
 // Function pointer type for setting column specs metadata in C#.
 type SetPreparedStatementVariablesMetadata = unsafe extern "C" fn(

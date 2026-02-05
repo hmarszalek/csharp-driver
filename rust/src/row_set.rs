@@ -4,7 +4,7 @@ use scylla::frame::response::result::{ColumnType, NativeType};
 
 use crate::error_conversion::FfiException;
 use crate::ffi::{
-    ArcFFI, BridgedBorrowedSharedPtr, FFI, FFIByteSlice, FFIStr, FfiPtr, FromArc, FromRef, RefFFI,
+    ArcFFI, BridgedBorrowedSharedPtr, FFI, FFIByteSlice, FFIPtr, FFIStr, FromArc, FromRef, RefFFI,
 };
 use crate::task::BridgedFuture;
 use crate::task::ExceptionConstructors;
@@ -138,21 +138,21 @@ enum Columns {}
 
 #[repr(transparent)]
 #[derive(Clone, Copy)]
-pub struct ColumnsPtr(FfiPtr<'static, Columns>);
+pub struct ColumnsPtr(FFIPtr<'static, Columns>);
 
 #[derive(Clone, Copy)]
 enum Values {}
 
 #[derive(Clone, Copy)]
 #[repr(transparent)]
-pub struct ValuesPtr(FfiPtr<'static, Values>);
+pub struct ValuesPtr(FFIPtr<'static, Values>);
 
 #[derive(Clone, Copy)]
 enum Serializer {}
 
 #[derive(Clone, Copy)]
 #[repr(transparent)]
-pub struct SerializerPtr(FfiPtr<'static, Serializer>);
+pub struct SerializerPtr(FFIPtr<'static, Serializer>);
 
 type DeserializeValue = unsafe extern "C" fn(
     columns_ptr: ColumnsPtr,

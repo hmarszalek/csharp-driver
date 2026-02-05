@@ -1,5 +1,5 @@
 use crate::error_conversion::FfiException;
-use crate::ffi::{ArcFFI, BridgedBorrowedSharedPtr, FFI, FFIByteSlice, FFIStr, FfiPtr, FromArc};
+use crate::ffi::{ArcFFI, BridgedBorrowedSharedPtr, FFI, FFIByteSlice, FFIPtr, FFIStr, FromArc};
 use scylla::cluster::ClusterState;
 
 impl FFI for ClusterState {
@@ -13,7 +13,7 @@ enum RefreshContext {}
 /// Transparent wrapper around a pointer to the C# RefreshContext.
 #[derive(Clone, Copy)]
 #[repr(transparent)]
-pub struct RefreshContextPtr(FfiPtr<'static, RefreshContext>);
+pub struct RefreshContextPtr(FFIPtr<'static, RefreshContext>);
 
 /// Callback type for constructing C# Host objects.
 /// The callback receives raw pointers to node metadata and is responsible for:

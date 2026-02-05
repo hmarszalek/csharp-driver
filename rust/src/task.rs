@@ -17,7 +17,7 @@ use crate::error_conversion::{
     TraceRetrievalExceptionConstructor, TruncateExceptionConstructor,
     UnauthorizedExceptionConstructor,
 };
-use crate::ffi::{ArcFFI, BridgedOwnedSharedPtr, FfiPtr};
+use crate::ffi::{ArcFFI, BridgedOwnedSharedPtr, FFIPtr};
 
 /// The global Tokio runtime used to execute async tasks.
 static RUNTIME: LazyLock<Runtime> = LazyLock::new(|| {
@@ -39,7 +39,7 @@ enum Tcs {}
 
 /// A pointer to a TaskCompletionSource<T> on the C# side.
 #[repr(transparent)]
-pub struct TcsPtr(FfiPtr<'static, Tcs>);
+pub struct TcsPtr(FFIPtr<'static, Tcs>);
 
 unsafe impl Send for TcsPtr {}
 

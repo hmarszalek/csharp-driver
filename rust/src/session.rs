@@ -14,7 +14,7 @@ use crate::ffi::{
     ArcFFI, BoxFFI, BridgedBorrowedSharedPtr, BridgedOwnedExclusivePtr, BridgedOwnedSharedPtr, FFI,
     FromArc,
 };
-use crate::pre_serialized_values::pre_serialized_values::PreSerializedValues;
+use crate::pre_serialized_values::PreSerializedValues;
 use crate::prepared_statement::BridgedPreparedStatement;
 use crate::row_set::RowSet;
 use crate::task::{BridgedFuture, ExceptionConstructors, ManuallyDestructible, Tcb};

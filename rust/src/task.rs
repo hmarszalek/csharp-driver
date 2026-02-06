@@ -218,7 +218,7 @@ impl BridgedFuture {
             tracing::trace!(
                 "[FFI]: Future completed with result: {} - {:?}",
                 std::any::type_name::<T>(),
-                result
+                "<Elided for brevity>"
             );
 
             match result {

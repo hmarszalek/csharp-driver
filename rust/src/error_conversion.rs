@@ -1,8 +1,8 @@
 use crate::ffi::{FFIByteSlice, FFIStr};
 use scylla::errors::{
-    ConnectionError, ConnectionPoolError, DbError, DeserializationError, MetadataError,
-    NewSessionError, NextPageError, NextRowError, PagerExecutionError, PrepareError,
-    RequestAttemptError, RequestError, SerializationError, TypeCheckError,
+    BadKeyspaceName, ConnectionError, ConnectionPoolError, DbError, DeserializationError,
+    MetadataError, NewSessionError, NextPageError, NextRowError, PagerExecutionError, PrepareError,
+    RequestAttemptError, RequestError, SerializationError, TypeCheckError, UseKeyspaceError,
 };
 use std::fmt::{Debug, Display};
 use std::mem::size_of;
@@ -364,8 +364,9 @@ impl ErrorToException for PagerExecutionError {
 
             PagerExecutionError::NextPageError(e) => e.to_exception(ctors),
 
-            PagerExecutionError::UseKeyspaceError(_)
-            | PagerExecutionError::SchemaAgreementError(_) => {
+            PagerExecutionError::UseKeyspaceError(e) => e.to_exception(ctors),
+
+            PagerExecutionError::SchemaAgreementError(_) => {
                 ctors.rust_exception_constructor.construct_from_rust(self)
             }
 
@@ -466,9 +467,10 @@ impl ErrorToException for NewSessionError {
         match self {
             NewSessionError::MetadataError(e) => e.to_exception(ctors),
 
+            NewSessionError::UseKeyspaceError(e) => e.to_exception(ctors),
+
             NewSessionError::FailedToResolveAnyHostname(_)
-            | NewSessionError::EmptyKnownNodesList
-            | NewSessionError::UseKeyspaceError(_) => {
+            | NewSessionError::EmptyKnownNodesList => {
                 ctors.rust_exception_constructor.construct_from_rust(self)
             }
 
@@ -490,6 +492,50 @@ impl ErrorToException for MetadataError {
             | MetadataError::Tables(_) => {
                 ctors.rust_exception_constructor.construct_from_rust(self)
             }
+
+            _ => ctors.rust_exception_constructor.construct_from_rust(self),
+        }
+    }
+}
+
+#[deny(clippy::wildcard_enum_match_arm)]
+impl ErrorToException for UseKeyspaceError {
+    fn to_exception(&self, ctors: &ExceptionConstructors) -> ExceptionPtr {
+        match self {
+            UseKeyspaceError::BadKeyspaceName(e) => e.to_exception(ctors),
+
+            UseKeyspaceError::RequestError(e) => e.to_exception(ctors),
+
+            UseKeyspaceError::KeyspaceNameMismatch { .. } => {
+                ctors.rust_exception_constructor.construct_from_rust(self)
+            }
+
+            UseKeyspaceError::RequestTimeout(duration) => ctors
+                .operation_timed_out_exception_constructor
+                .construct_from_rust(duration.as_millis().clamp(0, i32::MAX as u128) as i32),
+
+            _ => ctors.rust_exception_constructor.construct_from_rust(self),
+        }
+    }
+}
+
+#[deny(clippy::wildcard_enum_match_arm)]
+impl ErrorToException for BadKeyspaceName {
+    fn to_exception(&self, ctors: &ExceptionConstructors) -> ExceptionPtr {
+        match self {
+            // Rust considers an empty keyspace name invalid, but the C# wrapper should never allow this to be passed in.
+            // (At least for the case of setting a keyspace on Connect().)
+            BadKeyspaceName::Empty => ctors
+                .invalid_query_constructor
+                .construct_from_rust(self.to_string().as_str()),
+
+            BadKeyspaceName::TooLong(..) => ctors
+                .invalid_query_constructor
+                .construct_from_rust(self.to_string().as_str()),
+
+            BadKeyspaceName::IllegalCharacter(..) => ctors
+                .invalid_query_constructor
+                .construct_from_rust(self.to_string().as_str()),
 
             _ => ctors.rust_exception_constructor.construct_from_rust(self),
         }

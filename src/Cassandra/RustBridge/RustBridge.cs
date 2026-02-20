@@ -482,6 +482,7 @@ namespace Cassandra
             unsafe readonly static delegate* unmanaged[Cdecl]<FFIString, IntPtr> FunctionFailureExceptionConstructorPtr = &FunctionFailureException.FunctionFailureExceptionFromRust;
             unsafe readonly static delegate* unmanaged[Cdecl]<FFIString, IntPtr> InvalidConfigurationInQueryExceptionConstructorPtr = &InvalidConfigurationInQueryException.InvalidConfigurationInQueryExceptionFromRust;
             unsafe readonly static delegate* unmanaged[Cdecl]<FFIString, IntPtr> InvalidQueryConstructorPtr = &InvalidQueryException.InvalidQueryExceptionFromRust;
+            unsafe readonly static delegate* unmanaged[Cdecl]<FFIString, IntPtr> InvalidTypeExceptionConstructorPtr = &InvalidTypeException.InvalidTypeExceptionFromRust;
             unsafe readonly static delegate* unmanaged[Cdecl]<FFIString, IntPtr> NoHostAvailableExceptionConstructorPtr = &NoHostAvailableException.NoHostAvailableExceptionFromRust;
             unsafe readonly static delegate* unmanaged[Cdecl]<int, IntPtr> OperationTimedOutExceptionConstructorPtr = &OperationTimedOutException.OperationTimedOutExceptionFromRust;
             unsafe readonly static delegate* unmanaged[Cdecl]<FFIString, FFIByteSlice, IntPtr> PreparedQueryNotFoundExceptionConstructorPtr = &PreparedQueryNotFoundException.PreparedQueryNotFoundExceptionFromRust;
@@ -508,6 +509,7 @@ namespace Cassandra
                 internal readonly IntPtr function_failure_exception_constructor;
                 internal readonly IntPtr invalid_configuration_in_query_constructor;
                 internal readonly IntPtr invalid_query_constructor;
+                internal readonly IntPtr invalid_type_exception_constructor;
                 internal readonly IntPtr no_host_available_exception_constructor;
                 internal readonly IntPtr operation_timed_out_exception_constructor;
                 internal readonly IntPtr prepared_query_not_found_exception_constructor;
@@ -526,6 +528,7 @@ namespace Cassandra
                     IntPtr functionFailureException,
                     IntPtr invalidConfigurationInQueryException,
                     IntPtr invalidQueryException,
+                    IntPtr invalidTypeException,
                     IntPtr noHostAvailableException,
                     IntPtr operationTimedOutException,
                     IntPtr preparedQueryNotFoundException,
@@ -543,6 +546,7 @@ namespace Cassandra
                     function_failure_exception_constructor = functionFailureException;
                     invalid_configuration_in_query_constructor = invalidConfigurationInQueryException;
                     invalid_query_constructor = invalidQueryException;
+                    invalid_type_exception_constructor = invalidTypeException;
                     no_host_available_exception_constructor = noHostAvailableException;
                     operation_timed_out_exception_constructor = operationTimedOutException;
                     prepared_query_not_found_exception_constructor = preparedQueryNotFoundException;
@@ -576,6 +580,7 @@ namespace Cassandra
                     (IntPtr)FunctionFailureExceptionConstructorPtr,
                     (IntPtr)InvalidConfigurationInQueryExceptionConstructorPtr,
                     (IntPtr)InvalidQueryConstructorPtr,
+                    (IntPtr)InvalidTypeExceptionConstructorPtr,
                     (IntPtr)NoHostAvailableExceptionConstructorPtr,
                     (IntPtr)OperationTimedOutExceptionConstructorPtr,
                     (IntPtr)PreparedQueryNotFoundExceptionConstructorPtr,

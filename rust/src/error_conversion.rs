@@ -2,7 +2,7 @@ use crate::ffi::{FFIByteSlice, FFIStr};
 use scylla::errors::{
     ConnectionError, ConnectionPoolError, DbError, DeserializationError, MetadataError,
     NewSessionError, NextPageError, NextRowError, PagerExecutionError, PrepareError,
-    RequestAttemptError, RequestError, SerializationError,
+    RequestAttemptError, RequestError, SerializationError, TypeCheckError,
 };
 use std::fmt::{Debug, Display};
 use std::mem::size_of;
@@ -249,6 +249,18 @@ impl InvalidQueryConstructor {
     }
 }
 
+/// FFI constructor for C# `InvalidTypeException`.
+pub struct InvalidTypeExceptionConstructor(
+    unsafe extern "C" fn(message: FFIStr<'_>) -> ExceptionPtr,
+);
+
+impl InvalidTypeExceptionConstructor {
+    pub(crate) fn construct_from_rust(&self, message: &str) -> ExceptionPtr {
+        let message = FFIStr::new(message);
+        unsafe { (self.0)(message) }
+    }
+}
+
 pub struct SerializationExceptionConstructor(
     unsafe extern "C" fn(message: FFIStr<'_>) -> ExceptionPtr,
 );
@@ -427,6 +439,14 @@ impl ErrorToException for SerializationError {
     fn to_exception(&self, ctors: &ExceptionConstructors) -> ExceptionPtr {
         ctors
             .serialization_exception_constructor
+            .construct_from_rust(&self.to_string())
+    }
+}
+
+impl ErrorToException for TypeCheckError {
+    fn to_exception(&self, ctors: &ExceptionConstructors) -> ExceptionPtr {
+        ctors
+            .invalid_type_exception_constructor
             .construct_from_rust(&self.to_string())
     }
 }

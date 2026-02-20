@@ -15,6 +15,8 @@
 //
 
 using System;
+using System.Runtime.InteropServices;
+using System.Runtime.CompilerServices;
 
 namespace Cassandra
 {
@@ -44,6 +46,17 @@ namespace Cassandra
             ReceivedType = receivedType;
             ExpectedType = expectedType;
             ParamName = paramName;
+        }
+
+        [UnmanagedCallersOnly(CallConvs = new Type[] { typeof(CallConvCdecl) })]
+        internal static IntPtr InvalidTypeExceptionFromRust(RustBridge.FFIString message)
+        {
+            string msg = message.ToManagedString();
+            var exception = new InvalidTypeException(msg);
+
+            GCHandle handle = GCHandle.Alloc(exception);
+            IntPtr handlePtr = GCHandle.ToIntPtr(handle);
+            return handlePtr;
         }
     }
 }

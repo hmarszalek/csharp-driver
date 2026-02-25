@@ -50,19 +50,37 @@ pub extern "C" fn empty_bridged_result_free(ptr: BridgedOwnedSharedPtr<EmptyBrid
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn session_create(tcb: Tcb<ManuallyDestructible>, uri: CSharpStr<'_>) {
+pub extern "C" fn session_create(
+    tcb: Tcb<ManuallyDestructible>,
+    uri: CSharpStr<'_>,
+    keyspace: CSharpStr<'_>,
+) {
     // Convert the raw C string to a Rust string
-    let uri = uri.as_cstr().unwrap().to_str().unwrap();
-    let uri = uri.to_owned();
+    let uri = uri.as_cstr().unwrap().to_str().unwrap().to_owned();
+    let keyspace = keyspace.as_cstr().unwrap().to_str().unwrap().to_owned();
 
     BridgedFuture::spawn::<_, _, NewSessionError, _>(tcb, async move {
         tracing::debug!("[FFI] Create Session... {}", uri);
-        let session = SessionBuilder::new().known_node(&uri).build().await?;
-        tracing::info!("[FFI] Session created! URI: {}", uri);
+
+        // Rust considers passing empty string as an invalid keyspace name, while C# treats it as not providing a keyspace.
+        // Therefore if provided keyspace is not empty, set it on the session builder. Otherwise, build without setting a keyspace.
+        // Setting keyspace with Connect() on C# side is case-sensitive, so here we set case_sensitive to true.
+        let mut session_builder = SessionBuilder::new().known_node(&uri);
+        if !keyspace.is_empty() {
+            session_builder = session_builder.use_keyspace(&keyspace, true);
+        }
+        let session = session_builder.build().await?;
+
+        tracing::info!(
+            "[FFI] Session created! URI: {}, Keyspace: {}",
+            uri,
+            keyspace
+        );
         tracing::trace!(
             "[FFI] Contacted node's address: {}",
             session.get_cluster_state().get_nodes_info()[0].address
         );
+
         Ok(Arc::new(RwLock::new(BridgedSessionInner {
             session: Some(session),
         })))

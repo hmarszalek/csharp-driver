@@ -81,35 +81,10 @@ namespace Cassandra
             string contactPointUris,
             string keyspace)
         {
-            Task<RustBridge.ManuallyDestructible> mdSessionTask = BridgedSession.Create(contactPointUris);
+            Task<RustBridge.ManuallyDestructible> mdSessionTask = BridgedSession.Create(contactPointUris, keyspace);
 
             RustBridge.ManuallyDestructible mdSession = await mdSessionTask.ConfigureAwait(false);
             var session = new Session(cluster, mdSession);
-
-            // If a keyspace was specified, validate it exists by executing USE statement
-            // This should throw InvalidQueryException if keyspace doesn't exist.
-            if (!string.IsNullOrEmpty(keyspace))
-            {
-                try
-                {
-                    await session.ExecuteAsync(new SimpleStatement(CqlQueryTools.GetUseKeyspaceCql(keyspace)));
-                }
-                // TO DO: Catch more specific exception from Rust driver when keyspace does not exist.
-                catch (Exception)
-                {
-                    // If validation fails, instantly dispose the session to avoid connection pool errors.
-                    try
-                    {
-                        session.Dispose();
-                    }
-                    catch (Exception ex)
-                    {
-                        Session.Logger.Error($"Failed to dispose session during keyspace validation cleanup: {ex}");
-                    }
-                    throw;
-                }
-            }
-
             return session;
         }
 

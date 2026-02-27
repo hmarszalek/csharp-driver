@@ -294,6 +294,7 @@ Unless required by applicable law or agreed to in writing, software distributed 
 features/index
 faq/index
 upgrade-guide/index
+migration-guide/index
 examples/index
 datastax-api-reference.md
 :::

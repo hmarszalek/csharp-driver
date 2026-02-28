@@ -120,7 +120,7 @@ namespace Cassandra.IntegrationTests.Core
                 Diagnostics.CassandraTraceSwitch.Level = originalLevel;
             }
         }
-        
+
         [Test]
         public void Session_Keyspace_Does_Not_Exist_On_Change_Throws()
         {
@@ -182,7 +182,8 @@ namespace Cassandra.IntegrationTests.Core
         }
 
         [Test]
-        public void Session_Get_Keyspace() {
+        public void Session_Get_Keyspace()
+        {
             var localCluster = GetNewTemporaryCluster();
 
             using (var localSession = localCluster.Connect())

@@ -659,8 +659,52 @@ mod tests {
 }
 
 /*
- * Compound FFI types with length - byte slices and strings.
+ * Compound FFI types with length - slices and strings.
  */
+
+/// Represents a slice passed over FFI from Rust to C#.
+/// SAFETY: `ptr` must be a valid pointer to an array of length `len`.
+#[repr(C)]
+pub struct FFISlice<'a, T: Sized + Blittable> {
+    ptr: BridgedBorrowedSharedPtr<'a, T>,
+    len: usize,
+}
+
+impl<'a, T: Sized + Blittable> FFISlice<'a, T> {
+    pub(crate) fn new(slice: &'a [T]) -> Self {
+        let ptr = unsafe {
+            // SAFETY: slice.as_ptr() returns a valid pointer to a slice.
+            // Lifetime 'a is bound to the input slice reference, ensuring the
+            // returned FFISlice cannot outlive the data it points to.
+            BridgedBorrowedSharedPtr::from_raw(slice.as_ptr())
+        };
+        FFISlice {
+            ptr,
+            len: slice.len(),
+        }
+    }
+
+    pub(crate) fn as_slice(&self) -> &[T] {
+        if self.len == 0 {
+            return &[];
+        }
+
+        unsafe {
+            std::slice::from_raw_parts(
+                self.ptr.ptr.expect("non-null slice pointer").as_ptr(),
+                self.len,
+            )
+        }
+    }
+}
+
+// Compile-time assertions for size and alignment of `FFISlice` to ensure it matches the expected layout.
+// Ensures ABI compatibility with C#'s representation i.e. (*const u8, usize) for FFISlice<'static, u8>.
+const _: [(); std::mem::size_of::<FFISlice<'static, u8>>()] =
+    [(); std::mem::size_of::<(*const u8, usize)>()];
+const _: [(); std::mem::align_of::<FFISlice<'static, u8>>()] =
+    [(); std::mem::align_of::<(*const u8, usize)>()];
+
 
 /// Represents a byte slice passed over FFI from Rust to C#.
 /// SAFETY: `ptr` must be a valid pointer to a byte array of length `len`.

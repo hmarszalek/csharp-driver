@@ -43,7 +43,7 @@ namespace Cassandra
             [UnmanagedCallersOnly(CallConvs = new Type[] { typeof(CallConvCdecl) })]
             internal static unsafe FFIException WriteToString(FFIString str, IntPtr ptr)
             {
-                try 
+                try
                 {
                     var stringContainer = Unsafe.AsRef<StringContainer>((void*)ptr);
                     stringContainer.Value = str.ToManagedString();
@@ -555,7 +555,7 @@ namespace Cassandra
                     unauthorized_exception_constructor = unauthorizedException;
                 }
             }
-            
+
             internal static readonly Constructors* ConstructorsPtr;
 
             /// <summary>

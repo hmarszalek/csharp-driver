@@ -36,7 +36,7 @@ type ConstructCSharpHost = unsafe extern "C" fn(
 
 /// Populates a C# RefreshContext with node information from the cluster state.
 /// For each node in the cluster state, this function:
-/// 1. Serializes the node's metadata (IP, port, datacenter, rack, host ID) to raw bytes
+/// 1. Converts the node's metadata (IP, port, datacenter, rack, host ID) to FFI types
 /// 2. Invokes the callback with pointers to this temporary data
 /// 3. The callback must synchronously copy all data and add the Host to the RefreshContext
 ///

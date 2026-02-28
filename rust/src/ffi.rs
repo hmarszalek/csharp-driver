@@ -677,10 +677,6 @@ impl<T> Clone for FFIPtr<'_, T> {
 // Manual implementation to avoid `T: Copy` bound.
 impl<T> Copy for FFIPtr<'_, T> {}
 
-// Compile-time assertion that `FFIPtr` is pointer-sized.
-// Ensures ABI compatibility with C# (opaque GCHandle/IntPtr across FFI).
-const _: [(); std::mem::size_of::<FFIPtr<'_, ()>>()] = [(); std::mem::size_of::<*const ()>()];
-
 impl<'a, T> Debug for FFIPtr<'a, T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let ptr = self
@@ -690,6 +686,10 @@ impl<'a, T> Debug for FFIPtr<'a, T> {
         write!(f, "FFIPtr({:p})", ptr)
     }
 }
+
+// Compile-time assertion that `FFIPtr` is pointer-sized.
+// Ensures ABI compatibility with C# (opaque GCHandle/IntPtr across FFI).
+const _: [(); std::mem::size_of::<FFIPtr<'_, ()>>()] = [(); std::mem::size_of::<*const ()>()];
 
 pub(crate) type CSharpStr<'a> = FFIPtr<'a, c_char>;
 impl<'a> CSharpStr<'a> {

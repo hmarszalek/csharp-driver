@@ -103,6 +103,79 @@ namespace Cassandra
             }
         }
 
+        /// <summary>
+        /// Represents a slice (runtime-determined length array) passed over FFI boundary.
+        /// Used to pass slices from Rust to C#.
+        /// </summary>
+        [StructLayout(LayoutKind.Sequential)]
+        internal readonly struct FFISlice<T>
+            where T : unmanaged
+        {
+            internal readonly IntPtr ptr;
+            internal readonly nuint len;
+
+            internal FFISlice(IntPtr ptr, nuint len)
+            {
+                this.ptr = ptr;
+                this.len = len;
+            }
+
+            /// <summary>
+            /// Returns a zero-copy Span view over the Rust-owned memory.
+            /// The caller must not use the span beyond the lifetime of the Rust data it points into.
+            /// </summary>
+            internal unsafe Span<T> ToSpan()
+            {
+                if (len > int.MaxValue)
+                {
+                    // Slices in Rust can be larger than maximum Span<T> length.
+                    // This should never happen in practice, but we guard against it to avoid UB.
+                    Environment.FailFast("FFISlice length exceeds maximum Span<T> length.");
+                }
+
+                try
+                {
+                    if (len == 0)
+                    {
+                        return Span<T>.Empty;
+                    }
+
+                    if (ptr == IntPtr.Zero)
+                    {
+                        // Non-zero length with null pointer is a contract violation at the FFI boundary.
+                        Environment.FailFast("FFISlice has non-zero length with null pointer.");
+                    }
+
+                    return new Span<T>((T*)ptr.ToPointer(), (int)len);
+                }
+                catch (Exception ex)
+                {
+                    Environment.FailFast("Failed to create Span<T> from FFISlice", ex);
+                    return Span<T>.Empty;
+                }
+            }
+        }
+
+        /// <summary>
+        /// Non-generic wrapper for FFISlice used in UnmanagedCallersOnly methods.
+        /// This is required for .NET 8 compatibility, as .NET 8 doesn't recognize
+        /// generic structs as blittable in UnmanagedCallersOnly contexts.
+        /// Has identical memory layout to FFISlice, allowing safe reinterpretation.
+        /// </summary>
+        [StructLayout(LayoutKind.Sequential)]
+        internal readonly struct FFISliceRaw
+        {
+            internal readonly IntPtr ptr;
+            internal readonly nuint len;
+
+            // Reinterprets this non-generic slice as a typed FFISlice<T>.
+            // This is safe because both structs have identical memory layout.
+            internal FFISlice<T> As<T>() where T : unmanaged
+            {
+                return Unsafe.As<FFISliceRaw, FFISlice<T>>(ref Unsafe.AsRef(in this));
+            }
+        }
+
         internal interface IBridgedTaskResult
         {
             /// <summary>

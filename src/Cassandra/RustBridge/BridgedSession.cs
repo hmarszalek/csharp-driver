@@ -28,7 +28,7 @@ namespace Cassandra
 
 
         [DllImport("csharp_wrapper", CallingConvention = CallingConvention.Cdecl)]
-        unsafe private static extern void session_create(Tcb<ManuallyDestructible> tcb, [MarshalAs(UnmanagedType.LPUTF8Str)] string uri, [MarshalAs(UnmanagedType.LPUTF8Str)] string keyspace);
+        unsafe private static extern void session_create(Tcb<ManuallyDestructible> tcb, BridgedSessionConfig config);
 
         [DllImport("csharp_wrapper", CallingConvention = CallingConvention.Cdecl)]
         unsafe private static extern void session_shutdown(Tcb<ManuallyDestructible> tcb, IntPtr session);
@@ -66,7 +66,8 @@ namespace Cassandra
         /// </summary>
         /// <param name="uri"></param>
         /// <param name="keyspace"></param>
-        static internal Task<ManuallyDestructible> Create(string uri, string keyspace)
+        /// <param name="socketOptions">Socket options to be applied to the session.</param>
+        static internal Task<ManuallyDestructible> Create(string uri, string keyspace, SocketOptions socketOptions)
         {
             /*
              * TaskCompletionSource is a way to programatically control a Task.
@@ -84,7 +85,8 @@ namespace Cassandra
             // So we pass a pointer to the method and Rust code will call it via that pointer.
             // This is a common pattern to call C# code from native code ("reversed P/Invoke").
             var tcb = Tcb<ManuallyDestructible>.WithTcs(tcs);
-            session_create(tcb, uri, keyspace ?? string.Empty);
+            var bridgedSessionConfig = BridgedSessionConfig.BuildFrom(uri, keyspace, socketOptions);
+            session_create(tcb, bridgedSessionConfig);
 
             return tcs.Task;
         }
@@ -182,6 +184,65 @@ namespace Cassandra
                 );
             }
             return stringContainer.Value;
+        }
+
+        /// <summary>
+        /// TCP socket options passed to Rust.
+        /// Any changes to this struct must be mirrored in the corresponding Rust struct.
+        /// </summary>
+        [StructLayout(LayoutKind.Sequential)]
+        internal struct BridgedTcpConfig
+        {
+            internal FFIBool tcpNoDelay;
+            internal FFIBool tcpKeepAlive;
+            internal int tcpKeepAliveIntervalMillis;
+            internal int receiveBufferSize;
+            internal FFIBool reuseAddress;
+            internal int sendBufferSize;
+            internal int soLinger;
+
+            internal static BridgedTcpConfig BuildFrom(SocketOptions socketOptions)
+            {
+                return new BridgedTcpConfig
+                {
+                    tcpNoDelay = socketOptions?.TcpNoDelay ?? SocketOptions.DefaultTcpNoDelay,
+                    tcpKeepAlive = socketOptions?.KeepAlive ?? SocketOptions.DefaultKeepAlive,
+                    tcpKeepAliveIntervalMillis = socketOptions?.KeepAliveIntervalMillis ?? SocketOptions.DefaultKeepAliveIntervalMillis,
+                    receiveBufferSize = socketOptions?.ReceiveBufferSize ?? 0,
+                    reuseAddress = socketOptions?.ReuseAddress ?? false,
+                    sendBufferSize = socketOptions?.SendBufferSize ?? 0,
+                    soLinger = socketOptions?.SoLinger ?? -1,
+                };
+            }
+        }
+
+        /// <summary>
+        /// Configuration struct used to pass session creation parameters from C# to Rust.
+        /// Any changes to this struct must be mirrored in the corresponding Rust struct.
+        /// </summary>
+        [StructLayout(LayoutKind.Sequential)]
+        internal struct BridgedSessionConfig
+        {
+            [MarshalAs(UnmanagedType.LPUTF8Str)]
+            internal string Uri;
+
+            [MarshalAs(UnmanagedType.LPUTF8Str)]
+            internal string Keyspace;
+
+            internal int connectTimeoutMillis;
+
+            internal BridgedTcpConfig tcp;
+
+            internal static BridgedSessionConfig BuildFrom(string uri, string keyspace, SocketOptions socketOptions)
+            {
+                return new BridgedSessionConfig
+                {
+                    Uri = uri,
+                    Keyspace = keyspace ?? "",
+                    connectTimeoutMillis = socketOptions?.ConnectTimeoutMillis ?? SocketOptions.DefaultConnectTimeoutMillis,
+                    tcp = BridgedTcpConfig.BuildFrom(socketOptions),
+                };
+            }
         }
     }
 }

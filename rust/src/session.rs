@@ -2,7 +2,6 @@ use std::convert::Infallible;
 use std::sync::Arc;
 
 use scylla::client::session::Session;
-use scylla::client::session_builder::SessionBuilder;
 use scylla::cluster::ClusterState;
 use scylla::errors::{NewSessionError, PagerExecutionError, PrepareError};
 use scylla_cql::serialize::row::SerializedValues;
@@ -16,6 +15,7 @@ use crate::ffi::{
 use crate::pre_serialized_values::PreSerializedValues;
 use crate::prepared_statement::BridgedPreparedStatement;
 use crate::row_set::RowSet;
+use crate::session_config::BridgedSessionConfig;
 use crate::task::{BridgedFuture, ExceptionConstructors, ManuallyDestructible, Tcb};
 
 /// Internal representation of a session bridged to C#.
@@ -50,25 +50,14 @@ pub extern "C" fn empty_bridged_result_free(ptr: BridgedOwnedSharedPtr<EmptyBrid
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn session_create(
-    tcb: Tcb<ManuallyDestructible>,
-    uri: CSharpStr<'_>,
-    keyspace: CSharpStr<'_>,
-) {
-    // Convert the raw C string to a Rust string
-    let uri = uri.as_cstr().unwrap().to_str().unwrap().to_owned();
-    let keyspace = keyspace.as_cstr().unwrap().to_str().unwrap().to_owned();
+pub extern "C" fn session_create(tcb: Tcb<ManuallyDestructible>, config: BridgedSessionConfig<'_>) {
+    let (uri, keyspace, session_builder) = config.into_session_builder();
+    let uri = uri.to_owned();
+    let keyspace = keyspace.to_owned();
 
     BridgedFuture::spawn::<_, _, NewSessionError, _>(tcb, async move {
         tracing::debug!("[FFI] Create Session... {}", uri);
 
-        // Rust considers passing empty string as an invalid keyspace name, while C# treats it as not providing a keyspace.
-        // Therefore if provided keyspace is not empty, set it on the session builder. Otherwise, build without setting a keyspace.
-        // Setting keyspace with Connect() on C# side is case-sensitive, so here we set case_sensitive to true.
-        let mut session_builder = SessionBuilder::new().known_node(&uri);
-        if !keyspace.is_empty() {
-            session_builder = session_builder.use_keyspace(&keyspace, true);
-        }
         let session = session_builder.build().await?;
 
         tracing::info!(

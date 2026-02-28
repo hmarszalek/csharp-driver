@@ -103,6 +103,45 @@ namespace Cassandra
             }
         }
 
+        /// <summary>
+        /// Represents an array passed over FFI boundary.
+        /// Used to pass arrays from Rust to C#.
+        /// </summary>
+        [StructLayout(LayoutKind.Sequential)]
+        internal readonly struct FFIArray<T>
+            where T : unmanaged
+        {
+            internal readonly IntPtr ptr;
+            internal readonly nuint len;
+
+            internal FFIArray(IntPtr ptr, nuint len)
+            {
+                this.ptr = ptr;
+                this.len = len;
+            }
+
+            /// <summary>
+            /// Converts this unmanaged array into a managed array.
+            /// </summary>
+            /// <returns>Managed array created from Rust data, or empty array if ptr is null.</returns>
+            internal unsafe T[] ToManagedArray()
+            {
+                if (ptr == IntPtr.Zero || len == 0)
+                {
+                    return Array.Empty<T>();
+                }
+
+                var count = (int)len;
+                var result = new T[count];
+                var basePtr = (T*)ptr.ToPointer();
+                for (int i = 0; i < count; i++)
+                {
+                    result[i] = basePtr[i];
+                }
+                return result;
+            }
+        }
+
         internal interface IBridgedTaskResult
         {
             /// <summary>

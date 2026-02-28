@@ -706,3 +706,27 @@ pub(crate) struct CSharpManagedStringPtr(FFIPtr<'static, CSharpManagedString>);
 
 pub(crate) type WriteStringCallback =
     extern "C" fn(FFIStr<'_>, CSharpManagedStringPtr) -> FFIException;
+
+#[repr(C)]
+pub struct FFIArray<'a, T: Sized> {
+    ptr: BridgedBorrowedSharedPtr<'a, T>,
+    len: usize,
+}
+
+impl<'a, T: Sized> FFIArray<'a, T> {
+    pub(crate) fn from_vec(vec: &'a [T]) -> FFIArray<'a, T> {
+        if vec.is_empty() {
+            return FFIArray {
+                ptr: BridgedBorrowedSharedPtr::null(),
+                len: 0,
+            };
+        }
+        let ptr = unsafe {
+            BridgedBorrowedSharedPtr::from_raw(vec.as_ptr())
+        };
+        FFIArray {
+            ptr,
+            len: vec.len(),
+        }
+    }
+}

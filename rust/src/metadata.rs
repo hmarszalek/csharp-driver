@@ -1,5 +1,8 @@
 use crate::error_conversion::FFIException;
-use crate::ffi::{ArcFFI, BridgedBorrowedSharedPtr, FFI, FFIPtr, FFISlice, FFIStr, FromArc};
+use crate::ffi::{
+    ArcFFI, BridgedBorrowedSharedPtr, CSharpStr, FFI, FFIPtr, FFISlice, FFIStr, FromArc,
+};
+use crate::task::ExceptionConstructors;
 use scylla::cluster::ClusterState;
 
 impl FFI for ClusterState {
@@ -110,4 +113,236 @@ pub extern "C" fn cluster_state_fill_nodes(
     }
 
     FFIException::ok()
+}
+
+/// Opaque type representing the C# KeyspaceNameList.
+enum KeyspaceNameList {}
+
+/// Transparent wrapper around a pointer to the C# KeyspaceNameList.
+#[derive(Clone, Copy)]
+#[repr(transparent)]
+pub struct KeyspaceNameListPtr(FFIPtr<'static, KeyspaceNameList>);
+
+/// Callback type for adding a single keyspace name to a C# KeyspaceNameList.
+/// The callback receives a keyspace name and is responsible for
+/// adding it to the C# KeyspaceNameList referenced by keyspace_name_list_ptr.
+///
+/// # Safety
+/// - The string pointer (keyspace_name) is only valid for the duration of the callback
+/// - The callback must not store this pointer or access it after returning
+type AddKeyspaceName = unsafe extern "C" fn(
+    keyspace_name_list_ptr: KeyspaceNameListPtr,
+    keyspace_name: FFIStr<'_>,
+) -> FFIException;
+
+/// Populates a C# List with keyspace names from the cluster state. For each keyspace in the cluster state,
+/// this function invokes the callback with a single keyspace name. The callback must synchronously copy
+/// the string data and add it to the KeyspaceNameList.
+///
+/// # Safety
+/// - `keyspace_name_list_ptr` must point to a valid C# List that remains allocated during this call
+/// - All string pointers passed to the callback are temporary and only valid during that invocation
+/// - The callback must copy string data of keyspace names (e.g., via Marshal.PtrToStringUTF8) immediately.
+/// - The callback must return a valid FFIException.
+#[unsafe(no_mangle)]
+pub extern "C" fn cluster_state_get_keyspace_names(
+    cluster_state_ptr: BridgedBorrowedSharedPtr<'_, ClusterState>,
+    keyspace_name_list_ptr: KeyspaceNameListPtr,
+    add_keyspace_name_callback: AddKeyspaceName,
+) -> FFIException {
+    tracing::trace!("[FFI] cluster_state_get_keyspace_names called");
+
+    let cluster_state =
+        ArcFFI::as_ref(cluster_state_ptr).expect("valid and non-null ClusterState pointer");
+
+    unsafe {
+        let ffi_exception = ffi_callback_for_each(
+            keyspace_name_list_ptr,
+            add_keyspace_name_callback,
+            cluster_state
+                .keyspaces_iter()
+                .map(|(ks_name, _)| FFIStr::new(ks_name)),
+        );
+        if ffi_exception.has_exception() {
+            return ffi_exception;
+        }
+    }
+
+    FFIException::ok()
+}
+
+/// Opaque type representing the C# KeyspaceContext.
+enum KeyspaceContext {}
+
+/// Transparent wrapper around a pointer to the C# KeyspaceContext.
+#[repr(transparent)]
+pub struct KeyspaceContextPtr(FFIPtr<'static, KeyspaceContext>);
+
+// Opaque type representing replication options for a keyspace - Dictionary<string, string> in C#.
+enum ReplicationOptions {}
+
+/// Transparent wrapper around a pointer to the C# ReplicationOptions.
+#[derive(Clone, Copy)]
+#[repr(transparent)]
+pub struct ReplicationOptionsPtr(FFIPtr<'static, ReplicationOptions>);
+
+// Callbacks for adding replication factors to the replication options in C# KeyspaceMetadata construction.
+type SimpleStrategyAddRepFactor = unsafe extern "C" fn(
+    replication_options_ptr: ReplicationOptionsPtr,
+    rep_factor: usize,
+) -> FFIException;
+
+type NetworkTopologyStrategyAddRepFactor = unsafe extern "C" fn(
+    replication_options_ptr: ReplicationOptionsPtr,
+    datacenter: FFIStr<'_>,
+    rep_factor: usize,
+) -> FFIException;
+
+type OtherStrategyAddRepFactor = unsafe extern "C" fn(
+    replication_options_ptr: ReplicationOptionsPtr,
+    key: FFIStr<'_>,
+    value: FFIStr<'_>,
+) -> FFIException;
+
+// Replication factor callbacks grouped into a single struct to simplify passing them to the keyspace metadata construction function.
+#[repr(C)]
+pub struct StrategyAddRepFactor {
+    simple_strategy: SimpleStrategyAddRepFactor,
+    network_topology_strategy: NetworkTopologyStrategyAddRepFactor,
+    other_strategy: OtherStrategyAddRepFactor,
+}
+
+/// Callback type for constructing C# KeyspaceMetadata objects.
+/// The callback receives raw pointers to keyspace metadata and is responsible for:
+/// 1. Constructing a C# KeyspaceMetadata object from the provided data.
+/// 2. Setting the KeyspaceMetadata on the C# KeyspaceContext referenced by keyspace_context_ptr.
+///
+/// # Safety
+/// - All pointer parameters must be immediately copied/consumed during the callback invocation.
+/// - String pointers (strategy_class, key-value pairs) are only valid for the duration of the callback.
+/// - The callback must not store these pointers or access them after returning.
+/// - The callback must return a valid FFIException.
+type ConstructCSharpKeyspaceMetadata = unsafe extern "C" fn(
+    keyspace_context_ptr: KeyspaceContextPtr,
+    durable_writes: bool,
+    strategy_class: FFIStr<'_>,
+    replication_options_ptr: ReplicationOptionsPtr,
+) -> FFIException;
+
+/// Populates a C# KeyspaceContext with keyspace metadata from the cluster state.
+/// For the specified keyspace in the cluster state, this function:
+/// 1. Converts the keyspace's metadata (durable_writes, strategy class) to FFI types.
+/// 2. Constructs the replication options by invoking the appropriate callbacks for the keyspace's replication strategy.
+/// 3. Invokes the callback with pointers to this temporary data.
+///
+/// # Safety
+/// - `keyspace_context_ptr` and `replication_options_ptr` must point to valid C# KeyspaceContext and ReplicationOptions that remain allocated during this call.
+/// - All string pointers passed to the callback are temporary and only valid during that invocation.
+/// - The callback must copy string data (e.g., via Marshal.PtrToStringUTF8) immediately.
+/// - The callback must return a valid FFIException.
+#[unsafe(no_mangle)]
+pub extern "C" fn cluster_state_get_keyspace_metadata(
+    cluster_state_ptr: BridgedBorrowedSharedPtr<'_, ClusterState>,
+    keyspace_name: CSharpStr<'_>,
+    keyspace_context_ptr: KeyspaceContextPtr,
+    replication_options_ptr: ReplicationOptionsPtr,
+    add_rep_factor_callback: StrategyAddRepFactor,
+    construct_keyspace_callback: ConstructCSharpKeyspaceMetadata,
+    constructors: &'static ExceptionConstructors,
+) -> FFIException {
+    tracing::trace!("[FFI] cluster_state_get_keyspace_metadata");
+
+    let cluster_state =
+        ArcFFI::as_ref(cluster_state_ptr).expect("valid and non-null ClusterState pointer");
+
+    let keyspace_name = keyspace_name
+        .as_cstr()
+        .expect("valid C string for keyspace_name")
+        .to_str()
+        .expect("valid UTF-8 keyspace name");
+
+    let Some(keyspace) = cluster_state.get_keyspace(keyspace_name) else {
+        // If the keyspace is not found, return invalid argument exception to indicate the caller provided an invalid keyspace name.
+        let ex = constructors
+            .invalid_argument_exception_constructor
+            .construct_from_rust("Keyspace not found in cluster metadata");
+        return FFIException::from_exception(ex);
+    };
+
+    tracing::trace!("[FFI] Found keyspace: '{}'", keyspace_name);
+
+    let durable_writes = keyspace.durable_writes;
+
+    #[deny(clippy::wildcard_enum_match_arm)]
+    let strategy_class = match &keyspace.strategy {
+        scylla::cluster::metadata::Strategy::SimpleStrategy { replication_factor } => {
+            unsafe {
+                let res = (add_rep_factor_callback.simple_strategy)(
+                    replication_options_ptr,
+                    *replication_factor,
+                );
+                if res.has_exception() {
+                    return res;
+                }
+            }
+            FFIStr::new("SimpleStrategy")
+        }
+
+        scylla::cluster::metadata::Strategy::NetworkTopologyStrategy {
+            datacenter_repfactors,
+        } => {
+            tracing::trace!(
+                "[FFI] NetworkTopologyStrategy with datacenter rep_factors: {:?}",
+                datacenter_repfactors
+            );
+            for (dc, rf) in datacenter_repfactors {
+                unsafe {
+                    let res = (add_rep_factor_callback.network_topology_strategy)(
+                        replication_options_ptr,
+                        FFIStr::new(dc),
+                        *rf,
+                    );
+                    if res.has_exception() {
+                        return res;
+                    }
+                }
+            }
+            FFIStr::new("NetworkTopologyStrategy")
+        }
+
+        scylla::cluster::metadata::Strategy::LocalStrategy => FFIStr::new("LocalStrategy"),
+
+        scylla::cluster::metadata::Strategy::Other { name, data } => {
+            tracing::trace!("[FFI] Other strategy '{}' with options: {:?}", name, data);
+            for (k, v) in data {
+                unsafe {
+                    let res = (add_rep_factor_callback.other_strategy)(
+                        replication_options_ptr,
+                        FFIStr::new(k),
+                        FFIStr::new(v),
+                    );
+                    if res.has_exception() {
+                        return res;
+                    }
+                }
+            }
+            FFIStr::new(name.as_str())
+        }
+
+        // The match is exhaustive, but we add a wildcard arm to satisfy the compiler since the Strategy enum is non-exhaustive.
+        // If we ever encounter a new strategy variant that we don't know how to handle, we need to update this code to support it.
+        _ => unreachable!("All strategy variants should be covered"),
+    };
+
+    // Invoke the construct_keyspace_callback to construct and fill the C# KeyspaceMetadata object.
+    // All pointers passed to the callback are only valid during this invocation.
+    // The callback must copy all data immediately.
+    unsafe {
+        construct_keyspace_callback(
+            keyspace_context_ptr,
+            durable_writes,
+            strategy_class,
+            replication_options_ptr,
+        )
+    }
 }

@@ -3,6 +3,7 @@ using System.Runtime.InteropServices;
 using System.Net;
 using System.Runtime.CompilerServices;
 using static Cassandra.RustBridge;
+using System.Collections.Generic;
 
 namespace Cassandra
 {
@@ -96,6 +97,208 @@ namespace Cassandra
             }
 
             GC.KeepAlive(context);
+        }
+
+        [DllImport("csharp_wrapper", CallingConvention = CallingConvention.Cdecl)]
+        unsafe private static extern FFIException cluster_state_get_keyspace_metadata(
+            IntPtr clusterState,
+            [MarshalAs(UnmanagedType.LPUTF8Str)] string keyspaceName,
+            IntPtr contextPtr,
+            IntPtr replicationOptionsPtr,
+            StrategyAddRepFactorCallbacks addRepFactorCallbacks,
+            IntPtr callback,
+            IntPtr constructorsPtr);
+
+        private static readonly unsafe delegate* unmanaged[Cdecl]<IntPtr, nuint, FFIException> SimpleStrategyAddRepFactorPtr = &SimpleStrategyAddRepFactor;
+        [UnmanagedCallersOnly(CallConvs = new Type[] { typeof(CallConvCdecl) })]
+        private static unsafe FFIException SimpleStrategyAddRepFactor(
+            IntPtr replicationOptionsPtr,
+            nuint repFactor)
+        {
+            try
+            {
+                var replicationOptions = Unsafe.AsRef<Dictionary<string, string>>((void*)replicationOptionsPtr);
+                replicationOptions["replication_factor"] = repFactor.ToString();
+            }
+            catch (Exception ex)
+            {
+                return FFIException.FromException(ex);
+            }
+
+            return FFIException.Ok();
+        }
+
+        private static readonly unsafe delegate* unmanaged[Cdecl]<IntPtr, FFIString, nuint, FFIException> NetworkTopologyStrategyAddRepFactorPtr = &NetworkTopologyStrategyAddRepFactor;
+        [UnmanagedCallersOnly(CallConvs = new Type[] { typeof(CallConvCdecl) })]
+        private static unsafe FFIException NetworkTopologyStrategyAddRepFactor(
+            IntPtr replicationOptionsPtr,
+            FFIString datacenter,
+            nuint repFactor)
+        {
+            try
+            {
+                var replicationOptions = Unsafe.AsRef<Dictionary<string, string>>((void*)replicationOptionsPtr);
+                replicationOptions[datacenter.ToManagedString()] = repFactor.ToString();
+            }
+            catch (Exception ex)
+            {
+                return FFIException.FromException(ex);
+            }
+
+            return FFIException.Ok();
+        }
+
+        private static readonly unsafe delegate* unmanaged[Cdecl]<IntPtr, FFIString, FFIString, FFIException> OtherStrategyAddRepFactorPtr = &OtherStrategyAddRepFactor;
+        [UnmanagedCallersOnly(CallConvs = new Type[] { typeof(CallConvCdecl) })]
+        private static unsafe FFIException OtherStrategyAddRepFactor(
+            IntPtr replicationOptionsPtr,
+            FFIString strategyClass,
+            FFIString repFactor)
+        {
+            try
+            {
+                var replicationOptions = Unsafe.AsRef<Dictionary<string, string>>((void*)replicationOptionsPtr);
+                replicationOptions[strategyClass.ToManagedString()] = repFactor.ToManagedString();
+            }
+            catch (Exception ex)
+            {
+                return FFIException.FromException(ex);
+            }
+
+            return FFIException.Ok();
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        private unsafe readonly struct StrategyAddRepFactorCallbacks
+        {
+            public readonly IntPtr SimpleStrategyCallback;
+            public readonly IntPtr NetworkTopologyStrategyCallback;
+            public readonly IntPtr OtherStrategyCallback;
+
+            public StrategyAddRepFactorCallbacks()
+            {
+                SimpleStrategyCallback = (IntPtr)SimpleStrategyAddRepFactorPtr;
+                NetworkTopologyStrategyCallback = (IntPtr)NetworkTopologyStrategyAddRepFactorPtr;
+                OtherStrategyCallback = (IntPtr)OtherStrategyAddRepFactorPtr;
+            }
+        }
+
+        private static readonly unsafe delegate* unmanaged[Cdecl]<IntPtr, FFIBool, FFIString, IntPtr, FFIException> FillKeyspaceMetadataPtr = &FillKeyspaceMetadata;
+        [UnmanagedCallersOnly(CallConvs = new Type[] { typeof(CallConvCdecl) })]
+        private static unsafe FFIException FillKeyspaceMetadata(
+            IntPtr contextPtr,
+            FFIBool durableWrites,
+            FFIString strategyClass,
+            IntPtr replicationOptionsPtr)
+        {
+            try
+            {
+                var keyspaceMeta = Unsafe.AsRef<KeyspaceMetadata>((void*)contextPtr);
+                var replicationOptions = Unsafe.AsRef<Dictionary<string, string>>((void*)replicationOptionsPtr);
+
+                var replication = new Dictionary<string, int>();
+                foreach (var option in replicationOptions)
+                {
+                    if (int.TryParse(option.Value, out var parsedValue))
+                    {
+                        replication[option.Key] = parsedValue;
+                    }
+                    else
+                    {
+                        throw new InvalidOperationException($"Failed to parse replication option value '{option.Value}' for key '{option.Key}' into an integer.");
+                    }
+                }
+
+                keyspaceMeta.FillKeyspaceMetadata(durableWrites, strategyClass.ToManagedString(), replication);
+            }
+            catch (Exception ex)
+            {
+                return FFIException.FromException(ex);
+            }
+
+            return FFIException.Ok();
+        }
+
+        internal KeyspaceMetadata GetKeyspaceMetadata(BridgedClusterState clusterState, string keyspaceName)
+        {
+            var ksmd = new KeyspaceMetadata(clusterState, keyspaceName);
+            var replicationOptions = new Dictionary<string, string>();
+            var addRepFactorCallbacks = new StrategyAddRepFactorCallbacks();
+            try
+            {
+                unsafe
+                {
+                    RunWithIncrement(handle =>
+                        cluster_state_get_keyspace_metadata(
+                            handle,
+                            keyspaceName,
+                            (IntPtr)Unsafe.AsPointer(ref ksmd),
+                            (IntPtr)Unsafe.AsPointer(ref replicationOptions),
+                            addRepFactorCallbacks,
+                            (IntPtr)FillKeyspaceMetadataPtr,
+                            (IntPtr)Globals.ConstructorsPtr
+                        )
+                    );
+                }
+            }
+            catch (InvalidArgumentException)
+            {
+                // If the keyspace was not found return null.
+                return null;
+            }
+            catch (Exception ex)
+            {
+                // For other exceptions, rethrow as they indicate a failure in metadata retrieval rather than missing keyspace.
+                throw new InvalidOperationException($"Error retrieving metadata for keyspace '{keyspaceName}'.", ex);
+            }
+
+                        GC.KeepAlive(replicationOptions);
+            GC.KeepAlive(addRepFactorCallbacks);
+
+            return ksmd;
+        }
+
+        [DllImport("csharp_wrapper", CallingConvention = CallingConvention.Cdecl)]
+        unsafe private static extern FFIException cluster_state_get_keyspace_names(
+            IntPtr clusterState,
+            IntPtr keyspaceNameListPtr,
+            IntPtr callback);
+
+        private static readonly unsafe delegate* unmanaged[Cdecl]<IntPtr, FFIString, FFIException> AddKeyspaceNamePtr = &AddKeyspaceName;
+        [UnmanagedCallersOnly(CallConvs = new Type[] { typeof(CallConvCdecl) })]
+        private static unsafe FFIException AddKeyspaceName(
+            IntPtr keyspaceNameListPtr,
+            FFIString keyspaceName)
+        {
+            try
+            {
+                var keyspaceNameList = Unsafe.AsRef<List<string>>((void*)keyspaceNameListPtr);
+                keyspaceNameList.Add(keyspaceName.ToManagedString());
+            }
+            catch (Exception ex)
+            {
+                return FFIException.FromException(ex);
+            }
+
+            return FFIException.Ok();
+        }
+
+        internal List<string> GetKeyspaceNames()
+        {
+            List<string> keyspaceNames = new List<string>();
+
+            unsafe
+            {
+                RunWithIncrement(handle =>
+                    cluster_state_get_keyspace_names(
+                        handle,
+                        (IntPtr)Unsafe.AsPointer(ref keyspaceNames),
+                        (IntPtr)AddKeyspaceNamePtr
+                    )
+                );
+            }
+
+            return keyspaceNames;
         }
     }
 }

@@ -244,7 +244,17 @@ namespace Cassandra
         ///  <c>* keyspace</c> is not a known keyspace.</returns>
         public KeyspaceMetadata GetKeyspace(string keyspace)
         {
-            throw new NotImplementedException();
+            var session = _getActiveSessionOrThrow();
+            try
+            {
+                var clusterState = session.GetClusterState();
+                return clusterState.GetKeyspaceMetadata(clusterState, keyspace);
+            }
+            finally
+            {
+                // Release the lock on the session created by calling _getActiveSessionOrThrow. 
+                session.DecreaseReferenceCount();
+            }
         }
 
         /// <summary>
@@ -253,7 +263,16 @@ namespace Cassandra
         /// <returns>a collection of all defined keyspaces names.</returns>
         public ICollection<string> GetKeyspaces()
         {
-            throw new NotImplementedException();
+            var session = _getActiveSessionOrThrow();
+            try
+            {
+                return session.GetClusterState().GetKeyspaceNames();
+            }
+            finally
+            {
+                // Release the lock on the session created by calling _getActiveSessionOrThrow. 
+                session.DecreaseReferenceCount();
+            }
         }
 
         /// <summary>

@@ -259,7 +259,8 @@ namespace Cassandra
         ///  <c>* keyspace</c> is not a known keyspace.</returns>
         public KeyspaceMetadata GetKeyspace(string keyspace)
         {
-            throw new NotImplementedException();
+            EnsureClusterStateIsFresh();
+            return _lastClusterState.GetKeyspaceMetadata(this, keyspace);
         }
 
         /// <summary>
@@ -268,7 +269,8 @@ namespace Cassandra
         /// <returns>a collection of all defined keyspaces names.</returns>
         public ICollection<string> GetKeyspaces()
         {
-            throw new NotImplementedException();
+            EnsureClusterStateIsFresh();
+            return _lastClusterState.GetKeyspaceNames();
         }
 
         /// <summary>

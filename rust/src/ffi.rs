@@ -721,9 +721,7 @@ impl<'a, T: Sized> FFIArray<'a, T> {
                 len: 0,
             };
         }
-        let ptr = unsafe {
-            BridgedBorrowedSharedPtr::from_raw(vec.as_ptr())
-        };
+        let ptr = unsafe { BridgedBorrowedSharedPtr::from_raw(vec.as_ptr()) };
         FFIArray {
             ptr,
             len: vec.len(),

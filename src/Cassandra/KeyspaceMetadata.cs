@@ -37,20 +37,20 @@ namespace Cassandra
         /// </summary>
         /// <returns><c>true</c> if durable writes are set on this keyspace
         ///  , <c>false</c> otherwise.</returns>
-        public bool DurableWrites { get; }
+        public bool DurableWrites { get; private set; }
 
         /// <summary>
         ///  Gets the Strategy Class of this keyspace.
         /// </summary>
         /// <returns>name of StrategyClass of this keyspace.</returns>
-        public string StrategyClass { get; }
+        public string StrategyClass { get; private set; }
 
         /// <summary>
         ///  Returns the replication options for this keyspace.
         /// </summary>
         /// 
         /// <returns>a dictionary containing the keyspace replication strategy options.</returns>
-        public IDictionary<string, int> Replication { get; }
+        public IDictionary<string, int> Replication { get; private set; }
 
         /// <summary>
         /// Determines whether the keyspace is a virtual keyspace or not.
@@ -72,6 +72,26 @@ namespace Cassandra
             bool isVirtual = false)
         {
             throw new NotImplementedException("TODO: implement KeyspaceMetadata");
+        }
+
+        // Constructor for creating a KeyspaceMetadata with only the name, used for bridging rest of metadata from Rust to C#.
+        internal KeyspaceMetadata(
+            string name
+        )
+        {
+            Name = name;
+            IsVirtual = false;
+        }
+
+        internal void FillKeyspaceMetadata(
+            bool durableWrites,
+            string strategyClass,
+            IDictionary<string, string> replicationOptions
+        )
+        {
+            DurableWrites = durableWrites;
+            StrategyClass = strategyClass;
+            Replication = replicationOptions.ToDictionary(kv => kv.Key, kv => int.Parse(kv.Value));
         }
 
         /// <summary>

@@ -116,14 +116,15 @@ namespace Cassandra
 
         public Host GetHost(IPEndPoint address)
         {
-            var registry = GetRegistry();
-
+            EnsureClusterStateIsFresh();
+            var registry = _hostRegistry;
             return !registry.HostIdsByIp.TryGetValue(address, out var hostId) ? null : registry.HostsById.GetValueOrDefault(hostId);
         }
 
         internal Guid? GetHostIdByIp(IPEndPoint address)
         {
-            if (GetRegistry().HostIdsByIp.TryGetValue(address, out var hostId))
+            EnsureClusterStateIsFresh();
+            if (_hostRegistry.HostIdsByIp.TryGetValue(address, out var hostId))
             {
                 return hostId;
             }
@@ -138,7 +139,8 @@ namespace Cassandra
         public ICollection<Host> AllHosts()
         {
             // Return a snapshot copy of the values as ICollection<Host>
-            return new List<Host>(GetRegistry().HostsById.Values);
+            EnsureClusterStateIsFresh();
+            return new List<Host>(_hostRegistry.HostsById.Values);
         }
 
         public IEnumerable<IPEndPoint> AllReplicas()
@@ -163,9 +165,12 @@ namespace Cassandra
         }
 
         /// <summary>
-        /// Returns a registry instance, refreshing topology if needed.
+        /// This method is called at the beginning of methods that access the host cache or ClusterState to ensure they are up to date.
+        /// The method first tries to perform a lock-free read of the cluster state and compare it with the cached state.
+        /// If they are the same, it returns immediately. If they are different, it acquires a lock and checks again to avoid
+        /// refreshing the cache unnecessarily if another thread has already done it while we were waiting for the lock.
         /// </summary>
-        private HostRegistry GetRegistry()
+        private void EnsureClusterStateIsFresh()
         {
             var session = _getActiveSessionOrThrow();
 
@@ -183,7 +188,8 @@ namespace Cassandra
                         {
                             if (_lastClusterState.Equals(clusterState))
                             {
-                                return _hostRegistry;
+                                // Cluster state is the same, no need to refresh.
+                                return;
                             }
                         }
                         finally
@@ -202,8 +208,10 @@ namespace Cassandra
                     // Double-check: another thread may have updated the cache while we waited for lock.
                     if (_lastClusterState != null && _lastClusterState.Equals(clusterState))
                     {
+                        // Cluster state is the same, no need to refresh. 
+                        // Dispose the clusterState we just acquired and return.
                         clusterState.Dispose();
-                        return _hostRegistry;
+                        return;
                     }
 
                     // If cluster state changed, and cache is stale, refresh it.
@@ -213,7 +221,7 @@ namespace Cassandra
                     var oldState = Interlocked.Exchange(ref _lastClusterState, clusterState);
                     oldState?.Dispose();
 
-                    return _hostRegistry;
+                    return;
                 }
             }
             finally
@@ -244,7 +252,8 @@ namespace Cassandra
         ///  <c>* keyspace</c> is not a known keyspace.</returns>
         public KeyspaceMetadata GetKeyspace(string keyspace)
         {
-            throw new NotImplementedException();
+            EnsureClusterStateIsFresh();
+            return _lastClusterState.GetKeyspaceMetadata(keyspace);
         }
 
         /// <summary>
@@ -253,7 +262,8 @@ namespace Cassandra
         /// <returns>a collection of all defined keyspaces names.</returns>
         public ICollection<string> GetKeyspaces()
         {
-            throw new NotImplementedException();
+            EnsureClusterStateIsFresh();
+            return _lastClusterState.GetKeyspaceNames();
         }
 
         /// <summary>

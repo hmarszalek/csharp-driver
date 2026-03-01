@@ -3,6 +3,7 @@ using System.Runtime.InteropServices;
 using System.Net;
 using System.Runtime.CompilerServices;
 using static Cassandra.RustBridge;
+using System.Collections.Generic;
 
 namespace Cassandra
 {
@@ -96,6 +97,110 @@ namespace Cassandra
             }
 
             GC.KeepAlive(context);
+        }
+
+        [DllImport("csharp_wrapper", CallingConvention = CallingConvention.Cdecl)]
+        unsafe private static extern FFIException cluster_state_get_keyspace_metadata(
+            IntPtr clusterState,
+            [MarshalAs(UnmanagedType.LPUTF8Str)] string keyspaceName,
+            IntPtr contextPtr,
+            IntPtr callback,
+            IntPtr constructorsPtr);
+
+        private static readonly unsafe delegate* unmanaged[Cdecl]<IntPtr, FFIString, FFISliceRaw, FFISliceRaw, void> FillKeyspaceMetadataPtr = &FillKeyspaceMetadata;
+        [UnmanagedCallersOnly(CallConvs = new Type[] { typeof(CallConvCdecl) })]
+        private static unsafe void FillKeyspaceMetadata(
+            IntPtr contextPtr,
+            FFIString strategyClass,
+            FFISliceRaw replicationKeys,
+            FFISliceRaw replicationValues)
+        {
+            try
+            {
+                var keyspaceMeta = Unsafe.AsRef<KeyspaceMetadata>((void*)contextPtr);
+                var replication = new Dictionary<string, string>();
+
+                var keys = replicationKeys.As<FFIString>().ToSpan();
+                var values = replicationValues.As<FFIString>().ToSpan();
+
+                if (keys.Length != values.Length)
+                {
+                    Environment.FailFast("Mismatched keyspace replication keys/values lengths from Rust.");
+                }
+
+                for (int i = 0; i < keys.Length; i++)
+                {
+                    replication[keys[i].ToManagedString()] = values[i].ToManagedString();
+                }
+
+                keyspaceMeta.FillKeyspaceMetadata(true, strategyClass.ToManagedString(), replication);
+            }
+            catch (Exception ex)
+            {
+                // Do not throw across FFI boundary - causes undefined behavior.
+                // Fail fast to match Rust's panic=abort behavior and make the error obvious.
+                Environment.FailFast("Fatal error in FillKeyspaceMetadataCallback", ex);
+            }
+        }
+
+        internal void GetKeyspaceMetadata(KeyspaceMetadata ksmd)
+        {
+            unsafe
+            {
+                RunWithIncrement(handle =>
+                    cluster_state_get_keyspace_metadata(
+                        handle,
+                        ksmd.Name,
+                        (IntPtr)Unsafe.AsPointer(ref ksmd),
+                        (IntPtr)FillKeyspaceMetadataPtr,
+                        (IntPtr)Globals.ConstructorsPtr
+                    )
+                );
+            }
+        }
+
+        [DllImport("csharp_wrapper", CallingConvention = CallingConvention.Cdecl)]
+        unsafe private static extern FFIException cluster_state_get_keyspace_names(
+            IntPtr clusterState,
+            IntPtr keyspaceNameListPtr,
+            IntPtr callback);
+
+        private static readonly unsafe delegate* unmanaged[Cdecl]<IntPtr, FFISliceRaw, void> AddKeyspaceNamesPtr = &AddKeyspaceNames;
+        [UnmanagedCallersOnly(CallConvs = new Type[] { typeof(CallConvCdecl) })]
+        private static unsafe void AddKeyspaceNames(
+            IntPtr keyspaceNameListPtr,
+            FFISliceRaw keyspaceNames)
+        {
+            try
+            {
+                var keyspaceNameList = Unsafe.AsRef<List<string>>((void*)keyspaceNameListPtr);
+                foreach (var keyspaceName in keyspaceNames.As<FFIString>().ToSpan())
+                {
+                    keyspaceNameList.Add(keyspaceName.ToManagedString());
+                }
+            }
+            catch (Exception ex)
+            {
+                // Do not throw across FFI boundary - causes undefined behavior.
+                // Fail fast to match Rust's panic=abort behavior and make the error obvious.
+                Environment.FailFast("Fatal error in AddKeyspaceNamesCallback", ex);
+            }
+        }
+
+        internal List<string> GetKeyspaceNames()
+        {
+            List<string> keyspaceNames = new List<string>();
+            unsafe
+            {
+                RunWithIncrement(handle =>
+                    cluster_state_get_keyspace_names(
+                        handle,
+                        (IntPtr)Unsafe.AsPointer(ref keyspaceNames),
+                        (IntPtr)AddKeyspaceNamesPtr
+                    )
+                );
+            }
+            return keyspaceNames;
         }
     }
 }

@@ -34,15 +34,17 @@ namespace Cassandra
         /// Default value for <see cref="DefunctReadTimeoutThreshold"/>, 64.
         /// </summary>
         internal const int DefaultDefunctReadTimeoutThreshold = 64;
+        internal const bool DefaultKeepAlive = true;
         internal const int DefaultKeepAliveIntervalMillis = 2000;
+        internal const bool DefaultTcpNoDelay = true;
         private int _connectTimeoutMillis = DefaultConnectTimeoutMillis;
-        private bool _keepAlive = true;
+        private bool _keepAlive = DefaultKeepAlive;
         private int _keepAliveIntervalMillis = DefaultKeepAliveIntervalMillis;
         private int? _receiveBufferSize;
         private bool? _reuseAddress;
         private int? _sendBufferSize;
         private int? _soLinger;
-        private bool _tcpNoDelay = true;
+        private bool _tcpNoDelay = DefaultTcpNoDelay;
         private bool _useStreamMode;
         private int _readTimeoutMillis = DefaultReadTimeoutMillis;
         private int _defunctReadTimeoutThreshold = DefaultDefunctReadTimeoutThreshold;

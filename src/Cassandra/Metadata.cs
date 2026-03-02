@@ -282,7 +282,8 @@ namespace Cassandra
         ///  keyspace.</returns>
         public ICollection<string> GetTables(string keyspace)
         {
-            throw new NotImplementedException();
+            EnsureClusterStateIsFresh();
+            return _lastClusterState.GetTableNames(keyspace);
         }
 
         /// <summary>

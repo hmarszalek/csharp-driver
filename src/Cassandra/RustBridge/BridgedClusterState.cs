@@ -277,5 +277,50 @@ namespace Cassandra
             }
             return keyspaceNames;
         }
+
+        [DllImport("csharp_wrapper", CallingConvention = CallingConvention.Cdecl)]
+        unsafe private static extern FFIException cluster_state_get_table_names(
+            IntPtr clusterState,
+            [MarshalAs(UnmanagedType.LPUTF8Str)] string keyspaceName,
+            IntPtr tableNameListPtr,
+            IntPtr callback,
+            IntPtr constructorsPtr);
+
+        private static readonly unsafe delegate* unmanaged[Cdecl]<IntPtr, FFIString, FFIException> AddTableNamesPtr = &AddTableName;
+        [UnmanagedCallersOnly(CallConvs = new Type[] { typeof(CallConvCdecl) })]
+        private static unsafe FFIException AddTableName(
+            IntPtr tableNameListPtr,
+            FFIString tableName)
+        {
+            try
+            {
+                var tableNameList = Unsafe.AsRef<List<string>>((void*)tableNameListPtr);
+                tableNameList.Add(tableName.ToManagedString());
+            }
+            catch (Exception ex)
+            {
+                return FFIException.FromException(ex);
+            }
+
+            return FFIException.Ok();
+        }
+
+        internal List<string> GetTableNames(string keyspaceName)
+        {
+            List<string> tableNames = new List<string>();
+            unsafe
+            {
+                RunWithIncrement(handle =>
+                    cluster_state_get_table_names(
+                        handle,
+                        keyspaceName,
+                        (IntPtr)Unsafe.AsPointer(ref tableNames),
+                        (IntPtr)AddTableNamesPtr,
+                        (IntPtr)Globals.ConstructorsPtr
+                    )
+                );
+            }
+            return tableNames;
+        }
     }
 }

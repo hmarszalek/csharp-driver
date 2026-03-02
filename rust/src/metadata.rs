@@ -343,3 +343,66 @@ pub extern "C" fn cluster_state_get_keyspace_metadata(
         )
     }
 }
+
+/// Opaque type representing the C# TableNameList.
+enum TableNameList {}
+
+/// Transparent wrapper around a pointer to the C# TableNameList.
+#[derive(Clone, Copy)]
+#[repr(transparent)]
+pub struct TableNameListPtr(FFIPtr<'static, TableNameList>);
+
+/// Callback type for adding a single table name to a C# TableNameList.
+/// The callback receives a table name and is responsible for
+/// adding it to the C# TableNameList referenced by table_name_list_ptr.
+///
+/// # Safety
+/// - The string pointer (table_name) is only valid for the duration of the callback.
+/// - The callback must not store this pointer or access it after returning.
+type AddTableName = unsafe extern "C" fn(
+    table_name_list_ptr: TableNameListPtr,
+    table_name: FFIStr<'_>,
+) -> FFIException;
+
+/// Populates a C# List with table names from the cluster state. For each table in the cluster state,
+/// this function invokes the callback with a single table name. The callback must synchronously copy
+/// the string data and add it to the TableNameList.
+///
+/// # Safety
+/// - `table_name_list_ptr` must point to a valid C# List that remains allocated during this call.
+/// - All string pointers passed to the callback are temporary and only valid during that invocation.
+/// - The callback must copy string data of table names (e.g., via Marshal.PtrToStringUTF8) immediately.
+/// - The callback must return a valid FFIException.
+#[unsafe(no_mangle)]
+pub extern "C" fn cluster_state_get_table_names(
+    cluster_state_ptr: BridgedBorrowedSharedPtr<'_, ClusterState>,
+    keyspace_name: CSharpStr<'_>,
+    table_name_list_ptr: TableNameListPtr,
+    callback: AddTableName,
+    constructors: &'static ExceptionConstructors,
+) -> FFIException {
+    tracing::trace!("[FFI] cluster_state_get_table_names called");
+
+    let cluster_state =
+        ArcFFI::as_ref(cluster_state_ptr).expect("valid and non-null ClusterState pointer");
+
+    let keyspace_name = keyspace_name.as_cstr().unwrap().to_str().unwrap();
+    let Some(keyspace) = cluster_state.get_keyspace(keyspace_name) else {
+        // TODO: map to a more specific exception type.
+        let ex = constructors
+            .rust_exception_constructor
+            .construct_from_rust(format!(
+                "Keyspace '{}' not found in cluster metadata",
+                keyspace_name
+            ));
+        return FFIException::from_exception(ex);
+    };
+
+    unsafe {
+        ffi_callback_for_each(
+            table_name_list_ptr,
+            callback,
+            keyspace.tables.keys().map(|k| FFIStr::new(k.as_str())),
+        )
+    }
+}

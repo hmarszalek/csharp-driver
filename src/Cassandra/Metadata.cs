@@ -284,7 +284,16 @@ namespace Cassandra
         ///  keyspace.</returns>
         public ICollection<string> GetTables(string keyspace)
         {
-            throw new NotImplementedException();
+            var session = _getActiveSessionOrThrow();
+            try
+            {
+                return session.GetClusterState().GetTableNames(keyspace);
+            }
+            finally
+            {
+                // Release the lock on the session created by calling _getActiveSessionOrThrow. 
+                session.DecreaseReferenceCount();
+            }
         }
 
         /// <summary>
@@ -295,7 +304,16 @@ namespace Cassandra
         /// <returns>a TableMetadata for the specified table in the specified keyspace.</returns>
         public TableMetadata GetTable(string keyspace, string tableName)
         {
-            throw new NotImplementedException();
+            var session = _getActiveSessionOrThrow();
+            try
+            {
+                return session.GetClusterState().GetTableMetadata(keyspace, tableName);
+            }
+            finally
+            {
+                // Release the lock on the session created by calling _getActiveSessionOrThrow. 
+                session.DecreaseReferenceCount();
+            }
         }
 
         /// <summary>

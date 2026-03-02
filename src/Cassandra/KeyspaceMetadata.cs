@@ -108,12 +108,7 @@ namespace Cassandra
         ///  exists, <c>null</c> otherwise.</returns>
         public TableMetadata GetTableMetadata(string tableName)
         {
-            throw new NotImplementedException("TODO: implement TableMetadata");
-        }
-
-        internal Task<TableMetadata> GetTableMetadataAsync(string tableName)
-        {
-            throw new NotImplementedException("TODO: implement TableMetadata");
+            return _clusterState.GetTableMetadata(Name, tableName);
         }
 
         /// <summary>
@@ -166,7 +161,7 @@ namespace Cassandra
         ///  keyspace.</returns>
         public IEnumerable<TableMetadata> GetTablesMetadata()
         {
-            throw new NotImplementedException("TODO: implement TableMetadata");
+            return GetTablesNames().Select(GetTableMetadata);
         }
 
 
@@ -178,7 +173,7 @@ namespace Cassandra
         ///  keyspace tables names.</returns>
         public ICollection<string> GetTablesNames()
         {
-            throw new NotImplementedException("TODO: implement KeyspaceMetadata");
+            return _clusterState.GetTableNames(Name);
         }
 
         /// <summary>

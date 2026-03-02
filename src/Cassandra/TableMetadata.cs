@@ -45,13 +45,16 @@ namespace Cassandra
         /// </summary>
         public bool IsVirtual { get; protected set; }
 
+        internal string KeyspaceName { get; set; }
+
         protected TableMetadata()
         {
 
         }
 
-        internal TableMetadata(string name, IDictionary<string, IndexMetadata> indexes, bool isVirtual = false)
+        internal TableMetadata(string keyspace, string name, IDictionary<string, IndexMetadata> indexes = null, bool isVirtual = false)
         {
+            KeyspaceName = keyspace;
             Name = name;
             Indexes = indexes ?? EmptyIndexes;
             IsVirtual = isVirtual;

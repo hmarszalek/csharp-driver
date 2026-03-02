@@ -202,5 +202,53 @@ namespace Cassandra
             }
             return keyspaceNames;
         }
+
+        [DllImport("csharp_wrapper", CallingConvention = CallingConvention.Cdecl)]
+        unsafe private static extern FFIException cluster_state_get_table_names(
+            IntPtr clusterState,
+            [MarshalAs(UnmanagedType.LPUTF8Str)] string keyspaceName,
+            IntPtr tableNameListPtr,
+            IntPtr callback,
+            IntPtr constructorsPtr);
+
+        private static readonly unsafe delegate* unmanaged[Cdecl]<IntPtr, FFISliceRaw, void> AddTableNamesPtr = &AddTableNames;
+        [UnmanagedCallersOnly(CallConvs = new Type[] { typeof(CallConvCdecl) })]
+        private static unsafe void AddTableNames(
+            IntPtr tableNameListPtr,
+            FFISliceRaw tableNames)
+        {
+            try
+            {
+                var tableNameList = Unsafe.AsRef<List<string>>((void*)tableNameListPtr);
+                foreach (var tableName in tableNames.As<FFIString>().ToSpan())
+                {
+                    tableNameList.Add(tableName.ToManagedString());
+                }
+            }
+            catch (Exception ex)
+            {
+                // Do not throw across FFI boundary - causes undefined behavior.
+                // Fail fast to match Rust's panic=abort behavior and make the error obvious.
+                Environment.FailFast("Fatal error in AddTableNamesCallback", ex);
+            }
+        }
+
+        internal List<string> GetTableNames(string keyspaceName)
+        {
+            List<string> tableNames = new List<string>();
+            unsafe
+            {
+                RunWithIncrement(handle =>
+                    cluster_state_get_table_names(
+                        handle,
+                        keyspaceName,
+                        (IntPtr)Unsafe.AsPointer(ref tableNames),
+                        (IntPtr)AddTableNamesPtr,
+                        (IntPtr)Globals.ConstructorsPtr
+                    )
+                );
+            }
+            return tableNames;
+        }
     }
 }

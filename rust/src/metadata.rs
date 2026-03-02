@@ -285,3 +285,69 @@ pub extern "C" fn cluster_state_get_keyspace_metadata(
 
     FFIException::ok()
 }
+
+/// Opaque type representing the C# TableNameList.
+enum TableNameList {}
+
+/// Transparent wrapper around a pointer to the C# TableNameList.
+#[derive(Clone, Copy)]
+#[repr(transparent)]
+pub struct TableNameListPtr(FFIPtr<'static, TableNameList>);
+
+/// Callback type for adding table names to a C# TableNameList.
+/// The callback receives raw pointers to table name and is responsible for
+/// adding the name to the C# TableNameList referenced by table_name_list_ptr
+///
+/// # Safety
+/// - Pointer parameter must be immediately copied/consumed during the callback invocation
+/// - String pointer (table_name) is only valid for the duration of the callback
+/// - The callback must not store this pointer or access it after returning
+/// - The callback must not throw exceptions across the FFI boundary
+type AddTableName = unsafe extern "C" fn(
+    table_name_list_ptr: TableNameListPtr,
+    table_names: FFISlice<'_, FFIStr<'_>>,
+);
+
+/// Populates a C# List with table names from the cluster state.
+/// For each table in the cluster state, this function:
+/// 1. Invokes the callback with a pointer to the table name
+/// 2. The callback must synchronously copy all data and add the table name to the TableNameList
+///
+/// # Safety
+/// - `table_name_list_ptr` must point to a valid C# List that remains allocated during this call
+/// - All string pointers passed to the callback are temporary and only valid during that invocation
+/// - The callback must copy string data of table names (e.g., via Marshal.PtrToStringUTF8) immediately.
+/// - The callback must not throw exceptions; use Environment.FailFast on errors
+#[unsafe(no_mangle)]
+pub extern "C" fn cluster_state_get_table_names(
+    cluster_state_ptr: BridgedBorrowedSharedPtr<'_, ClusterState>,
+    keyspace_name: CSharpStr<'_>,
+    table_name_list_ptr: TableNameListPtr,
+    callback: AddTableName,
+    constructors: &'static ExceptionConstructors,
+) -> FFIException {
+    tracing::trace!("[FFI] cluster_state_get_table_names called");
+
+    let cluster_state =
+        ArcFFI::as_ref(cluster_state_ptr).expect("valid and non-null ClusterState pointer");
+
+    let keyspace_name = keyspace_name.as_cstr().unwrap().to_str().unwrap();
+    let Some(keyspace) = cluster_state.get_keyspace(keyspace_name) else {
+        // TODO: map to a more specific exception type.
+        let ex = constructors
+            .rust_exception_constructor
+            .construct_from_rust(format!(
+                "Keyspace '{}' not found in cluster metadata",
+                keyspace_name
+            ));
+        return FFIException::from_exception(ex);
+    };
+
+    let table_names: Vec<FFIStr<'_>> = keyspace.tables.keys().map(FFIStr::new).collect();
+
+    unsafe {
+        callback(table_name_list_ptr, FFISlice::new(&table_names));
+    }
+
+    FFIException::ok()
+}

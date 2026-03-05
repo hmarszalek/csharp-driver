@@ -523,6 +523,58 @@ pub struct FromRef;
 impl<T> origin_sealed::FromRefSealed for T where T: FFI<Origin = FromRef> {}
 impl<T> RefFFI for T where T: FFI<Origin = FromRef> {}
 
+mod blittable_sealed {
+    // This is a sealed trait - its whole purpose is to be unnameable.
+    // This means we need to disable the check.
+    #[expect(unnameable_types)]
+    pub trait BlittableSealed {}
+}
+
+/// Marker trait for types that are safe to pass across FFI boundaries.
+///
+/// Blittable types have the same representation in managed (C#) and unmanaged (Rust) code.
+/// This trait is sealed and can only be implemented for known FFI-safe types.
+///
+/// Types that can be blittable include:
+/// - Primitive types: integers, floats
+/// - Our FFI types: `FFIStr`, `FFIBool`
+pub trait Blittable: blittable_sealed::BlittableSealed + Sized {}
+
+// Implement Blittable for primitive types
+impl blittable_sealed::BlittableSealed for u8 {}
+impl Blittable for u8 {}
+
+impl blittable_sealed::BlittableSealed for u16 {}
+impl Blittable for u16 {}
+
+impl blittable_sealed::BlittableSealed for u32 {}
+impl Blittable for u32 {}
+
+impl blittable_sealed::BlittableSealed for u64 {}
+impl Blittable for u64 {}
+
+impl blittable_sealed::BlittableSealed for i8 {}
+impl Blittable for i8 {}
+
+impl blittable_sealed::BlittableSealed for i16 {}
+impl Blittable for i16 {}
+
+impl blittable_sealed::BlittableSealed for i32 {}
+impl Blittable for i32 {}
+
+impl blittable_sealed::BlittableSealed for i64 {}
+impl Blittable for i64 {}
+
+impl blittable_sealed::BlittableSealed for f32 {}
+impl Blittable for f32 {}
+
+impl blittable_sealed::BlittableSealed for f64 {}
+impl Blittable for f64 {}
+
+// Implement Blittable for our FFI types
+impl<'a> blittable_sealed::BlittableSealed for FFIStr<'a> {}
+impl<'a> Blittable for FFIStr<'a> {}
+
 mod tests {
     /// ```compile_fail,E0499
     /// # use csharp_wrapper::ffi::{BridgedOwnedExclusivePtr, BridgedBorrowedExclusivePtr, FFI, BoxFFI, FromBox};

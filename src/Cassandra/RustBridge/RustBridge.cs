@@ -557,7 +557,7 @@ namespace Cassandra
             unsafe readonly static delegate* unmanaged[Cdecl]<FFIString, IntPtr> InvalidTypeExceptionConstructorPtr = &InvalidTypeException.InvalidTypeExceptionFromRust;
             unsafe readonly static delegate* unmanaged[Cdecl]<FFIString, IntPtr> NoHostAvailableExceptionConstructorPtr = &NoHostAvailableException.NoHostAvailableExceptionFromRust;
             unsafe readonly static delegate* unmanaged[Cdecl]<int, IntPtr> OperationTimedOutExceptionConstructorPtr = &OperationTimedOutException.OperationTimedOutExceptionFromRust;
-            unsafe readonly static delegate* unmanaged[Cdecl]<FFIString, FFIByteSlice, IntPtr> PreparedQueryNotFoundExceptionConstructorPtr = &PreparedQueryNotFoundException.PreparedQueryNotFoundExceptionFromRust;
+            unsafe readonly static delegate* unmanaged[Cdecl]<FFIString, FFISliceRaw, IntPtr> PreparedQueryNotFoundExceptionConstructorPtr = &PreparedQueryNotFoundException.PreparedQueryNotFoundExceptionFromRust;
             unsafe readonly static delegate* unmanaged[Cdecl]<FFIString, IntPtr> RequestInvalidExceptionConstructorPtr = &RequestInvalidException.RequestInvalidExceptionFromRust;
             unsafe readonly static delegate* unmanaged[Cdecl]<FFIString, IntPtr> RustExceptionConstructorPtr = &RustException.RustExceptionFromRust;
             unsafe readonly static delegate* unmanaged[Cdecl]<FFIString, IntPtr> SerializationExceptionConstructorPtr = &SerializationException.SerializationExceptionFromRust;

@@ -24,12 +24,12 @@ namespace Cassandra
             IntPtr contextPtr,
             IntPtr callback);
 
-        private static readonly unsafe delegate* unmanaged[Cdecl]<IntPtr, FFIByteSlice, FFIByteSlice, ushort, FFIString, FFIString, void> AddHostPtr = &AddHostToList;
+        private static readonly unsafe delegate* unmanaged[Cdecl]<IntPtr, FFISliceRaw, FFISliceRaw, ushort, FFIString, FFIString, void> AddHostPtr = &AddHostToList;
         [UnmanagedCallersOnly(CallConvs = new Type[] { typeof(CallConvCdecl) })]
         private static unsafe void AddHostToList(
             IntPtr contextPtr,
-            FFIByteSlice idBytes,
-            FFIByteSlice ipBytes,
+            FFISliceRaw idBytes,
+            FFISliceRaw ipBytes,
             ushort port,
             FFIString datacenter,
             FFIString rack)
@@ -47,12 +47,12 @@ namespace Cassandra
                 // This matches the pattern used in row_set_fill_columns_metadata.
                 var context = Unsafe.AsRef<Metadata.RefreshContext>((void*)contextPtr);
 
-                var hostId = new Guid(idBytes.ToSpan());
+                var hostId = new Guid(idBytes.As<byte>().ToSpan());
 
-                // Construct IPAddress directly from bytes (4 for IPv4, 16 for IPv6). ipBytes is an FFIByteSlice 
+                // Construct IPAddress directly from bytes (4 for IPv4, 16 for IPv6). ipBytes is an FFISlice<byte> 
                 // and it accesses unmanaged memory that is only valid for the duration of this callback invocation. 
                 // The IPAddress constructor must be called synchronously here so it can copy the data immediately.
-                var ipAddress = new IPAddress(ipBytes.ToSpan());
+                var ipAddress = new IPAddress(ipBytes.As<byte>().ToSpan());
                 var address = new IPEndPoint(ipAddress, port);
 
                 // Try to reuse existing host object if id matches and address is the same

@@ -31,10 +31,10 @@ namespace Cassandra
         }
 
         [UnmanagedCallersOnly(CallConvs = new Type[] { typeof(CallConvCdecl) })]
-        internal static IntPtr PreparedQueryNotFoundExceptionFromRust(RustBridge.FFIString message, RustBridge.FFIByteSlice unknownId)
+        internal static IntPtr PreparedQueryNotFoundExceptionFromRust(RustBridge.FFIString message, RustBridge.FFISliceRaw unknownId)
         {
             string msg = message.ToManagedString();
-            byte[] unknownIdBytes = unknownId.ToSpan().ToArray();
+            byte[] unknownIdBytes = unknownId.As<byte>().ToSpan().ToArray();
             var exception = new PreparedQueryNotFoundException(msg, unknownIdBytes);
 
             GCHandle handle = GCHandle.Alloc(exception);

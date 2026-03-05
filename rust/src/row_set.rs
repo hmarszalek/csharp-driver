@@ -4,7 +4,7 @@ use scylla::frame::response::result::{ColumnType, NativeType};
 
 use crate::error_conversion::FFIException;
 use crate::ffi::{
-    ArcFFI, BridgedBorrowedSharedPtr, FFI, FFIByteSlice, FFIPtr, FFIStr, FromArc, FromRef, RefFFI,
+    ArcFFI, BridgedBorrowedSharedPtr, FFI, FFIPtr, FFISlice, FFIStr, FromArc, FromRef, RefFFI,
 };
 use crate::task::BridgedFuture;
 use crate::task::ExceptionConstructors;
@@ -136,7 +136,7 @@ type DeserializeValue = unsafe extern "C" fn(
     values_ptr: ValuesPtr,
     value_index: usize,
     serializer_ptr: SerializerPtr,
-    frame_slice: FFIByteSlice<'_>,
+    frame_slice: FFISlice<'_, u8>,
 ) -> FFIException;
 
 #[unsafe(no_mangle)]
@@ -205,7 +205,7 @@ pub extern "C" fn row_set_next_row<'row_set>(
                     values_ptr,
                     value_index,
                     serializer_ptr,
-                    FFIByteSlice::new(frame_slice.as_slice()),
+                    FFISlice::new(frame_slice.as_slice()),
                 );
                 if ffi_exception.has_exception() {
                     return Err(ffi_exception);
@@ -368,9 +368,9 @@ pub extern "C" fn row_set_type_info_get_tuple_field<'typ>(
 // --- UDT accessors ---
 
 #[unsafe(no_mangle)]
-pub extern "C" fn row_set_type_info_get_udt_name(
-    type_info_handle: BridgedBorrowedSharedPtr<'_, ColumnType<'_>>,
-    out_name: *mut FFIStr<'_>,
+pub extern "C" fn row_set_type_info_get_udt_name<'a>(
+    type_info_handle: BridgedBorrowedSharedPtr<'a, ColumnType<'a>>,
+    out_name: *mut FFIStr<'a>,
 ) {
     let Some(type_info) = RefFFI::as_ref(type_info_handle) else {
         panic!("Null pointer passed to row_set_type_info_get_udt_name");

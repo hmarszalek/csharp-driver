@@ -1,5 +1,5 @@
 use crate::error_conversion::FFIException;
-use crate::ffi::{ArcFFI, BridgedBorrowedSharedPtr, FFI, FFIByteSlice, FFIPtr, FFIStr, FromArc};
+use crate::ffi::{ArcFFI, BridgedBorrowedSharedPtr, FFI, FFIPtr, FFISlice, FFIStr, FromArc};
 use scylla::cluster::ClusterState;
 
 impl FFI for ClusterState {
@@ -27,8 +27,8 @@ pub struct RefreshContextPtr(FFIPtr<'static, RefreshContext>);
 /// - The callback must not throw exceptions across the FFI boundary
 type ConstructCSharpHost = unsafe extern "C" fn(
     refresh_context_ptr: RefreshContextPtr,
-    id_bytes: FFIByteSlice<'_>,
-    ip_bytes: FFIByteSlice<'_>,
+    id_bytes: FFISlice<'_, u8>,
+    ip_bytes: FFISlice<'_, u8>,
     port: u16,
     datacenter: FFIStr<'_>,
     rack: FFIStr<'_>,
@@ -36,7 +36,7 @@ type ConstructCSharpHost = unsafe extern "C" fn(
 
 /// Populates a C# RefreshContext with node information from the cluster state.
 /// For each node in the cluster state, this function:
-/// 1. Serializes the node's metadata (IP, port, datacenter, rack, host ID) to raw bytes
+/// 1. Converts the node's metadata (IP, port, datacenter, rack, host ID) to FFI types
 /// 2. Invokes the callback with pointers to this temporary data
 /// 3. The callback must synchronously copy all data and add the Host to the RefreshContext
 ///
@@ -56,7 +56,7 @@ pub extern "C" fn cluster_state_fill_nodes(
 
     for node in cluster_state.get_nodes_info() {
         // UUID as bytes
-        let uuid_bytes = FFIByteSlice::new(node.host_id.as_bytes());
+        let uuid_bytes = FFISlice::new(node.host_id.as_bytes());
 
         // The octets() returns an owned stack array. We store it in outer-scope
         // variables so we can take a slice that outlives the match expression.
@@ -80,7 +80,7 @@ pub extern "C" fn cluster_state_fill_nodes(
             }
         };
 
-        let ip_bytes = FFIByteSlice::new(ip_bytes_slice);
+        let ip_bytes = FFISlice::new(ip_bytes_slice);
 
         // Get datacenter (Option<String>) - pass null when missing
         let dc_str = match node.datacenter.as_deref() {

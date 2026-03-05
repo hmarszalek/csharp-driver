@@ -63,47 +63,6 @@ namespace Cassandra
         }
 
         /// <summary>
-        /// Represents a byte slice passed over FFI boundary.
-        /// Used to pass byte arrays from Rust to C#.
-        /// </summary>
-        [StructLayout(LayoutKind.Sequential)]
-        internal readonly struct FFIByteSlice
-        {
-            internal readonly IntPtr ptr;
-            internal readonly nuint len;
-
-            internal FFIByteSlice(IntPtr ptr, nuint len)
-            {
-                this.ptr = ptr;
-                this.len = len;
-            }
-
-            internal Span<byte> ToSpan()
-            {
-                if (len > int.MaxValue)
-                {
-                    // Byte slices in Rust can be larger than maximum Span<byte> length.
-                    // This should never happen in practice, but we guard against it to avoid UB.
-                    Environment.FailFast("FFIByteSlice length exceeds maximum Span<byte> length.");
-                    return Span<byte>.Empty;
-                }
-                unsafe
-                {
-                    // ToSpan() is called in callbacks so we catch any exceptions here to avoid UB.
-                    try
-                    {
-                        return new Span<byte>((void*)ptr, (int)len);
-                    }
-                    catch (Exception ex)
-                    {
-                        Environment.FailFast("Failed to create Span<byte> from FFIByteSlice", ex);
-                        return Span<byte>.Empty;
-                    }
-                }
-            }
-        }
-
-        /// <summary>
         /// Represents a slice (runtime-determined length array) passed over FFI boundary.
         /// Used to pass slices from Rust to C#.
         /// </summary>

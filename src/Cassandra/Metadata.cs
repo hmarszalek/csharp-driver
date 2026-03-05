@@ -224,6 +224,73 @@ namespace Cassandra
         }
 
         /// <summary>
+        /// This method is called at the beginning of methods that access the host cache or ClusterState to ensure they are up to date.
+        /// The method first tries to perform a lock-free read of the cluster state and compare it with the cached state.
+        /// If they are the same, it returns immediately. If they are different, it acquires a lock and checks again to avoid
+        /// refreshing the cache unnecessarily if another thread has already done it while we were waiting for the lock.
+        /// </summary>
+        private void EnsureClusterStateIsFresh()
+        {
+            var session = _getActiveSessionOrThrow();
+
+            try
+            {
+                // First, try to perform a lock-free read.
+                // This is the fast path in the common case where the cluster state has not changed.
+                using (var clusterState = session.GetClusterState())
+                {
+                    // If a cached cluster state exists, try to increase its reference count
+                    // to use it for comparison without taking the lock.
+                    if (_lastClusterState != null && _lastClusterState.TryIncreaseReferenceCount())
+                    {
+                        try
+                        {
+                            if (_lastClusterState.Equals(clusterState))
+                            {
+                                // Cluster state is the same, no need to refresh.
+                                return;
+                            }
+                        }
+                        finally
+                        {
+                            // Release the reference acquired above.
+                            _lastClusterState.DecreaseReferenceCount();
+                        }
+                    }
+                }
+
+                // Acquire the host lock to perform update if needed.
+                lock (_hostLock)
+                {
+                    // Acquire fresh pointer inside lock - the cluster state may have changed while we waited for lock.
+                    var clusterState = session.GetClusterState();
+                    // Double-check: another thread may have updated the cache while we waited for lock.
+                    if (_lastClusterState != null && _lastClusterState.Equals(clusterState))
+                    {
+                        // Cluster state is the same, no need to refresh. 
+                        // Dispose the clusterState we just acquired and return.
+                        clusterState.Dispose();
+                        return;
+                    }
+
+                    // If cluster state changed, and cache is stale, refresh it.
+                    RefreshTopologyCache(clusterState);
+
+                    // Dispose the old state as we don't need it anymore.
+                    var oldState = Interlocked.Exchange(ref _lastClusterState, clusterState);
+                    oldState?.Dispose();
+
+                    return;
+                }
+            }
+            finally
+            {
+                // Release the lock on the session created by calling _getActiveSessionOrThrow. 
+                session.DecreaseReferenceCount();
+            }
+        }
+
+        /// <summary>
         /// Updates the cached topology if the cluster state has changed.
         /// </summary>
         private void RefreshTopologyCache(BridgedClusterState clusterState)
@@ -244,7 +311,10 @@ namespace Cassandra
         ///  <c>* keyspace</c> is not a known keyspace.</returns>
         public KeyspaceMetadata GetKeyspace(string keyspace)
         {
-            throw new NotImplementedException();
+            EnsureClusterStateIsFresh();
+            KeyspaceMetadata km = new KeyspaceMetadata(this, keyspace);
+            _lastClusterState.GetKeyspaceMetadata(km);
+            return km;
         }
 
         /// <summary>
@@ -253,7 +323,8 @@ namespace Cassandra
         /// <returns>a collection of all defined keyspaces names.</returns>
         public ICollection<string> GetKeyspaces()
         {
-            throw new NotImplementedException();
+            EnsureClusterStateIsFresh();
+            return _lastClusterState.GetKeyspaceNames();
         }
 
         /// <summary>
@@ -265,7 +336,8 @@ namespace Cassandra
         ///  keyspace.</returns>
         public ICollection<string> GetTables(string keyspace)
         {
-            throw new NotImplementedException();
+            EnsureClusterStateIsFresh();
+            return _lastClusterState.GetTableNames(keyspace);
         }
 
         /// <summary>

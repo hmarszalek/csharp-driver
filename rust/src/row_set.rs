@@ -4,7 +4,7 @@ use scylla::frame::response::result::{ColumnType, NativeType};
 
 use crate::error_conversion::FFIException;
 use crate::ffi::{
-    ArcFFI, BridgedBorrowedSharedPtr, FFI, FFIByteSlice, FFIPtr, FFIStr, FromArc, FromRef, RefFFI,
+    ArcFFI, BridgedBorrowedSharedPtr, FFI, FFIPtr, FFISlice, FFIStr, FromArc, FromRef, RefFFI,
 };
 use crate::task::BridgedFuture;
 use crate::task::ExceptionConstructors;
@@ -136,7 +136,7 @@ type DeserializeValue = unsafe extern "C" fn(
     values_ptr: ValuesPtr,
     value_index: usize,
     serializer_ptr: SerializerPtr,
-    frame_slice: FFIByteSlice<'_>,
+    frame_slice: FFISlice<'_, u8>,
 ) -> FFIException;
 
 #[unsafe(no_mangle)]
@@ -205,7 +205,7 @@ pub extern "C" fn row_set_next_row<'row_set>(
                     values_ptr,
                     value_index,
                     serializer_ptr,
-                    FFIByteSlice::new(frame_slice.as_slice()),
+                    FFISlice::new(frame_slice.as_slice()),
                 );
                 if ffi_exception.has_exception() {
                     return Err(ffi_exception);

@@ -304,7 +304,7 @@ namespace Cassandra
             }
         }
 
-        unsafe readonly static delegate* unmanaged[Cdecl]<IntPtr, IntPtr, nuint, IntPtr, FFIByteSlice, FFIException> deserializeValue = &DeserializeValue;
+        unsafe readonly static delegate* unmanaged[Cdecl]<IntPtr, IntPtr, nuint, IntPtr, FFISliceRaw, FFIException> deserializeValue = &DeserializeValue;
 
         /// <summary>
         /// This shall be called by Rust code for each column in a row.
@@ -315,7 +315,7 @@ namespace Cassandra
             IntPtr valuesPtr,
             nuint valueIndex,
             IntPtr serializerPtr,
-            FFIByteSlice FFIframeSlice
+            FFISliceRaw FFIframeSlice
         )
         {
             try
@@ -329,7 +329,7 @@ namespace Cassandra
                     CqlColumn column = columns[valueIndex];
 
                     // TODO: reuse the frameSlice buffer.
-                    var frameSlice = FFIframeSlice.ToSpan().ToArray();
+                    var frameSlice = FFIframeSlice.As<byte>().ToSpan().ToArray();
                     int length = frameSlice.Length;
                     values[valueIndex] = serializer.Deserialize(ProtocolVersion.V4, frameSlice, 0, length, column.TypeCode, column.TypeInfo);
                 }

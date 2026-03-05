@@ -1,4 +1,4 @@
-use crate::ffi::{FFIByteSlice, FFIStr};
+use crate::ffi::{FFISlice, FFIStr};
 use scylla::errors::{
     BadKeyspaceName, ConnectionError, ConnectionPoolError, DbError, DeserializationError,
     MetadataError, NewSessionError, NextPageError, NextRowError, PagerExecutionError, PrepareError,
@@ -134,7 +134,7 @@ impl OperationTimedOutExceptionConstructor {
 /// FFI constructor for C# `PreparedQueryNotFoundException`.
 #[repr(transparent)]
 pub struct PreparedQueryNotFoundExceptionConstructor(
-    unsafe extern "C" fn(message: FFIStr<'_>, unknown_id: FFIByteSlice<'_>) -> ExceptionPtr,
+    unsafe extern "C" fn(message: FFIStr<'_>, unknown_id: FFISlice<'_, u8>) -> ExceptionPtr,
 );
 
 impl PreparedQueryNotFoundExceptionConstructor {
@@ -143,7 +143,7 @@ impl PreparedQueryNotFoundExceptionConstructor {
     /// `unknown_id` is the raw statement id bytes associated with the error.
     pub(crate) fn construct_from_rust(&self, message: &str, unknown_id: &[u8]) -> ExceptionPtr {
         let message = FFIStr::new(message);
-        let unknown_id = FFIByteSlice::new(unknown_id);
+        let unknown_id = FFISlice::new(unknown_id);
         unsafe { (self.0)(message, unknown_id) }
     }
 }

@@ -727,19 +727,19 @@ impl<'a> FFIByteSlice<'a> {
 /// SAFETY: `slice` must be a valid pointer a UTF-8 encoded string with correctly set length.
 #[repr(transparent)]
 pub struct FFIStr<'a> {
-    slice: FFIByteSlice<'a>,
+    slice: FFISlice<'a, u8>,
 }
 
 impl<'a> FFIStr<'a> {
     pub(crate) fn new(s: impl AsRef<str>) -> Self {
         Self {
-            slice: FFIByteSlice::new(s.as_ref().as_bytes()),
+            slice: FFISlice::new(s.as_ref().as_bytes()),
         }
     }
 
     pub(crate) fn null() -> Self {
         Self {
-            slice: FFIByteSlice {
+            slice: FFISlice {
                 ptr: BridgedBorrowedSharedPtr::null(),
                 len: 0,
             },

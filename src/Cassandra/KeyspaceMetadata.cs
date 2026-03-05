@@ -152,7 +152,7 @@ namespace Cassandra
         ///  keyspace tables names.</returns>
         public ICollection<string> GetTablesNames()
         {
-            throw new NotImplementedException("TODO: implement KeyspaceMetadata");
+            return _parent.GetTables(Name);
         }
 
         /// <summary>

@@ -163,9 +163,21 @@ namespace Cassandra
         }
 
         /// <summary>
-        /// Returns a registry instance, refreshing topology if needed.
+        /// Returns a registry instance, refreshing cache if needed.
         /// </summary>
         private HostRegistry GetRegistry()
+        {
+            EnsureClusterStateIsFresh();
+            return _hostRegistry;
+        }
+
+        /// <summary>
+        /// This method is called at the beginning of methods that access the host cache or ClusterState to ensure they are up to date.
+        /// The method first tries to perform a lock-free read of the cluster state and compare it with the cached state.
+        /// If they are the same, it returns immediately. If they are different, it acquires a lock and checks again to avoid
+        /// refreshing the cache unnecessarily if another thread has already done it while we were waiting for the lock.
+        /// </summary>
+        private void EnsureClusterStateIsFresh()
         {
             var session = _getActiveSessionOrThrow();
 
@@ -183,7 +195,8 @@ namespace Cassandra
                         {
                             if (_lastClusterState.Equals(clusterState))
                             {
-                                return _hostRegistry;
+                                // Cluster state is the same, no need to refresh.
+                                return;
                             }
                         }
                         finally
@@ -202,8 +215,10 @@ namespace Cassandra
                     // Double-check: another thread may have updated the cache while we waited for lock.
                     if (_lastClusterState != null && _lastClusterState.Equals(clusterState))
                     {
+                        // Cluster state is the same, no need to refresh. 
+                        // Dispose the clusterState we just acquired and return.
                         clusterState.Dispose();
-                        return _hostRegistry;
+                        return;
                     }
 
                     // If cluster state changed, and cache is stale, refresh it.
@@ -213,7 +228,7 @@ namespace Cassandra
                     var oldState = Interlocked.Exchange(ref _lastClusterState, clusterState);
                     oldState?.Dispose();
 
-                    return _hostRegistry;
+                    return;
                 }
             }
             finally

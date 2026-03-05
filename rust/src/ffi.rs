@@ -698,40 +698,6 @@ impl<'a, T: Sized + Blittable> FFISlice<'a, T> {
     }
 }
 
-/// Represents a byte slice passed over FFI from Rust to C#.
-/// SAFETY: `ptr` must be a valid pointer to a byte array of length `len`.
-#[repr(C)]
-pub struct FFIByteSlice<'a> {
-    ptr: BridgedBorrowedSharedPtr<'a, u8>,
-    len: usize,
-}
-
-impl<'a> FFIByteSlice<'a> {
-    pub(crate) fn new(slice: impl AsRef<[u8]>) -> Self {
-        let s = slice.as_ref();
-        let ptr = unsafe {
-            // SAFETY: slice.as_ptr() returns a valid reference to a byte slice.
-            // Lifetime is inherited from the slice reference, so it's safe to create
-            // a borrowed pointer with the same lifetime.
-            BridgedBorrowedSharedPtr::from_raw(s.as_ptr())
-        };
-        FFIByteSlice { ptr, len: s.len() }
-    }
-
-    pub(crate) fn as_slice(&self) -> &[u8] {
-        if self.len == 0 {
-            return &[];
-        }
-
-        unsafe {
-            std::slice::from_raw_parts(
-                self.ptr.ptr.expect("non-null slice pointer").as_ptr(),
-                self.len,
-            )
-        }
-    }
-}
-
 /// Represents a string passed over FFI from Rust to C#.
 /// SAFETY: `slice` must be a valid pointer a UTF-8 encoded string with correctly set length.
 #[repr(transparent)]

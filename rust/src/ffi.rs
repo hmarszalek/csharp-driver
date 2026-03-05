@@ -523,6 +523,65 @@ pub struct FromRef;
 impl<T> origin_sealed::FromRefSealed for T where T: FFI<Origin = FromRef> {}
 impl<T> RefFFI for T where T: FFI<Origin = FromRef> {}
 
+pub mod blittable {
+    mod blittable_sealed {
+        // This is a sealed trait - its whole purpose is to be unnameable.
+        // This means we need to disable the check.
+        #[expect(unnameable_types)]
+        pub trait Sealed {}
+    }
+
+    /// Marker trait for types that are safe to pass across FFI boundaries.
+    ///
+    /// Blittable types have the same representation in managed (C#) and unmanaged (Rust) code.
+    /// This trait is sealed and can only be implemented for known FFI-safe types.
+    ///
+    /// Types that can be blittable include:
+    /// - Primitive types: integers, floats
+    /// - Our FFI types: `FFIStr`, `FFIBool`
+    pub trait Blittable: blittable_sealed::Sealed + Sized {}
+
+    // Implement Blittable for primitive types
+    impl blittable_sealed::Sealed for u8 {}
+    impl Blittable for u8 {}
+
+    impl blittable_sealed::Sealed for u16 {}
+    impl Blittable for u16 {}
+
+    impl blittable_sealed::Sealed for u32 {}
+    impl Blittable for u32 {}
+
+    impl blittable_sealed::Sealed for u64 {}
+    impl Blittable for u64 {}
+
+    impl blittable_sealed::Sealed for i8 {}
+    impl Blittable for i8 {}
+
+    impl blittable_sealed::Sealed for i16 {}
+    impl Blittable for i16 {}
+
+    impl blittable_sealed::Sealed for i32 {}
+    impl Blittable for i32 {}
+
+    impl blittable_sealed::Sealed for i64 {}
+    impl Blittable for i64 {}
+
+    impl blittable_sealed::Sealed for f32 {}
+    impl Blittable for f32 {}
+
+    impl blittable_sealed::Sealed for f64 {}
+    impl Blittable for f64 {}
+
+    // Implement Blittable for our FFI types
+    impl<'a> blittable_sealed::Sealed for super::FFIStr<'a> {}
+    impl<'a> Blittable for super::FFIStr<'a> {}
+
+    impl blittable_sealed::Sealed for super::FFIBool {}
+    impl Blittable for super::FFIBool {}
+}
+
+pub use blittable::Blittable;
+
 mod tests {
     /// ```compile_fail,E0499
     /// # use csharp_wrapper::ffi::{BridgedOwnedExclusivePtr, BridgedBorrowedExclusivePtr, FFI, BoxFFI, FromBox};

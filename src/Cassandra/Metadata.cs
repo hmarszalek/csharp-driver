@@ -163,64 +163,12 @@ namespace Cassandra
         }
 
         /// <summary>
-        /// Returns a registry instance, refreshing topology if needed.
+        /// Returns a registry instance, refreshing cache if needed.
         /// </summary>
         private HostRegistry GetRegistry()
         {
-            var session = _getActiveSessionOrThrow();
-
-            try
-            {
-                // First, try to perform a lock-free read.
-                // This is the fast path in the common case where the cluster state has not changed.
-                using (var clusterState = session.GetClusterState())
-                {
-                    // If a cached cluster state exists, try to increase its reference count
-                    // to use it for comparison without taking the lock.
-                    if (_lastClusterState != null && _lastClusterState.TryIncreaseReferenceCount())
-                    {
-                        try
-                        {
-                            if (_lastClusterState.Equals(clusterState))
-                            {
-                                return _hostRegistry;
-                            }
-                        }
-                        finally
-                        {
-                            // Release the reference acquired above.
-                            _lastClusterState.DecreaseReferenceCount();
-                        }
-                    }
-                }
-
-                // Acquire the host lock to perform update if needed.
-                lock (_hostLock)
-                {
-                    // Acquire fresh pointer inside lock - the cluster state may have changed while we waited for lock.
-                    var clusterState = session.GetClusterState();
-                    // Double-check: another thread may have updated the cache while we waited for lock.
-                    if (_lastClusterState != null && _lastClusterState.Equals(clusterState))
-                    {
-                        clusterState.Dispose();
-                        return _hostRegistry;
-                    }
-
-                    // If cluster state changed, and cache is stale, refresh it.
-                    RefreshTopologyCache(clusterState);
-
-                    // Dispose the old state as we don't need it anymore.
-                    var oldState = Interlocked.Exchange(ref _lastClusterState, clusterState);
-                    oldState?.Dispose();
-
-                    return _hostRegistry;
-                }
-            }
-            finally
-            {
-                // Release the lock on the session created by calling _getActiveSessionOrThrow. 
-                session.DecreaseReferenceCount();
-            }
+            EnsureClusterStateIsFresh();
+            return _hostRegistry;
         }
 
         /// <summary>

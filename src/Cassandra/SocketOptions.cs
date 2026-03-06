@@ -30,21 +30,18 @@ namespace Cassandra
         /// Default value for <see cref="ReadTimeoutMillis"/>, 12000ms.
         /// </summary>
         public const int DefaultReadTimeoutMillis = 12000;
-        /// <summary>
-        /// Default value for <see cref="DefunctReadTimeoutThreshold"/>, 64.
-        /// </summary>
-        internal const int DefaultDefunctReadTimeoutThreshold = 64;
+        internal const bool DefaultKeepAlive = true;
+        internal const int DefaultKeepAliveIntervalMillis = 2000;
+        internal const bool DefaultTcpNoDelay = true;
         private int _connectTimeoutMillis = DefaultConnectTimeoutMillis;
-        private bool _keepAlive = true;
+        private bool _keepAlive = DefaultKeepAlive;
+        private int _keepAliveIntervalMillis = DefaultKeepAliveIntervalMillis;
         private int? _receiveBufferSize;
         private bool? _reuseAddress;
         private int? _sendBufferSize;
         private int? _soLinger;
-        private bool _tcpNoDelay = true;
-        private bool _useStreamMode;
+        private bool _tcpNoDelay = DefaultTcpNoDelay;
         private int _readTimeoutMillis = DefaultReadTimeoutMillis;
-        private int _defunctReadTimeoutThreshold = DefaultDefunctReadTimeoutThreshold;
-        private int _metadataAbortTimeout = 5 * 60000;
 
         /// <summary>
         /// Gets the number of milliseconds to wait for the socket to connect
@@ -60,6 +57,15 @@ namespace Cassandra
         public bool? KeepAlive
         {
             get { return _keepAlive; }
+        }
+
+        /// <summary>
+        /// Gets the number of milliseconds to wait between TCP keep-alive probes.
+        /// This option is only used if KeepAlive is set to true.
+        /// </summary>
+        public int KeepAliveIntervalMillis
+        {
+            get { return _keepAliveIntervalMillis; }
         }
 
         public bool? ReuseAddress
@@ -101,15 +107,6 @@ namespace Cassandra
         }
 
         /// <summary>
-        /// Determines if the driver should use either .NET NetworkStream interface (true) or SocketEventArgs interface (false, default)
-        /// to handle the reading and writing
-        /// </summary>
-        public bool UseStreamMode
-        {
-            get { return _useStreamMode; }
-        }
-
-        /// <summary>
         /// The per-host read timeout in milliseconds.
         /// <para>
         /// This defines how long the driver will wait for a given Cassandra node to answer a query.
@@ -120,16 +117,6 @@ namespace Cassandra
         public int ReadTimeoutMillis
         {
             get { return _readTimeoutMillis; }
-        }
-
-        internal int MetadataAbortTimeout => _metadataAbortTimeout;
-
-        /// <summary>
-        /// Gets the amount of requests that simultaneously have to timeout before closing the connection.
-        /// </summary>
-        public int DefunctReadTimeoutThreshold
-        {
-            get { return _defunctReadTimeoutThreshold; }
         }
 
         /// <summary>
@@ -147,6 +134,16 @@ namespace Cassandra
         public SocketOptions SetKeepAlive(bool keepAlive)
         {
             _keepAlive = keepAlive;
+            return this;
+        }
+        
+        /// <summary>
+        /// Sets the number of milliseconds to wait between TCP keep-alive probes.
+        /// This option is only used if KeepAlive is set to true.
+        /// </summary> 
+        public SocketOptions SetKeepAliveIntervalMillis(int keepAliveIntervalMillis)
+        {
+            _keepAliveIntervalMillis = keepAliveIntervalMillis;
             return this;
         }
 
@@ -194,16 +191,6 @@ namespace Cassandra
         }
 
         /// <summary>
-        /// Sets if the driver should use either .NET NetworkStream (true) interface or SocketEventArgs interface (false, default)
-        /// to handle the reading and writing
-        /// </summary>
-        public SocketOptions SetStreamMode(bool useStreamMode)
-        {
-            _useStreamMode = useStreamMode;
-            return this;
-        }
-
-        /// <summary>
         /// Sets the per-host read timeout in milliseconds.
         /// <para>When setting this value, keep in mind the following:</para>
         /// <para>- the timeout settings used on the Cassandra side (*_request_timeout_in_ms in cassandra.yaml) should be taken into account when picking a value for this read timeout. In particular, if this read timeout option is lower than Cassandra's timeout, the driver might assume that the host is not responsive and mark it down.</para>
@@ -213,21 +200,6 @@ namespace Cassandra
         public SocketOptions SetReadTimeoutMillis(int milliseconds)
         {
             _readTimeoutMillis = milliseconds;
-            return this;
-        }
-
-        /// <summary>
-        /// Determines the amount of requests that simultaneously have to timeout before closing the connection.
-        /// </summary>
-        public SocketOptions SetDefunctReadTimeoutThreshold(int amountOfTimeouts)
-        {
-            _defunctReadTimeoutThreshold = amountOfTimeouts;
-            return this;
-        }
-
-        internal SocketOptions SetMetadataAbortTimeout(int metadataAbortTimeout)
-        {
-            _metadataAbortTimeout = metadataAbortTimeout;
             return this;
         }
     }

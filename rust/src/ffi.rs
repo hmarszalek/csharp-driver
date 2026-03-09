@@ -661,6 +661,30 @@ impl<'a> FFIStr<'a> {
     }
 }
 
+/// Represents a boolean passed over FFI between Rust and C#.
+/// Uses u8 representation to match C#'s byte.
+/// SAFETY: Only 0 (false) and 1 (true) are valid values.
+#[repr(transparent)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FFIBool {
+    value: u8,
+}
+
+impl FFIBool {
+    /// Creates an FFIBool from a Rust bool.
+    pub(crate) fn from(value: bool) -> Self {
+        Self {
+            value: if value { 1 } else { 0 },
+        }
+    }
+
+    /// Converts FFIBool to a Rust bool.
+    #[expect(unused)]
+    pub(crate) fn as_bool(self) -> bool {
+        self.value != 0
+    }
+}
+
 #[repr(transparent)]
 pub struct FFIPtr<'a, T: Sized> {
     ptr: Option<NonNull<T>>,

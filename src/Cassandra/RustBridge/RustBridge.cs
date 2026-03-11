@@ -505,6 +505,7 @@ namespace Cassandra
             unsafe readonly static delegate* unmanaged[Cdecl]<FFIString, IntPtr> AlreadyShutdownExceptionConstructorPtr = &AlreadyShutdownException.AlreadyShutdownExceptionFromRust;
             unsafe readonly static delegate* unmanaged[Cdecl]<FFIString, IntPtr> DeserializationExceptionConstructorPtr = &DeserializationException.DeserializationExceptionFromRust;
             unsafe readonly static delegate* unmanaged[Cdecl]<FFIString, IntPtr> FunctionFailureExceptionConstructorPtr = &FunctionFailureException.FunctionFailureExceptionFromRust;
+            unsafe readonly static delegate* unmanaged[Cdecl]<FFIString, IntPtr> InvalidArgumentExceptionConstructorPtr = &InvalidArgumentException.InvalidArgumentExceptionFromRust;
             unsafe readonly static delegate* unmanaged[Cdecl]<FFIString, IntPtr> InvalidConfigurationInQueryExceptionConstructorPtr = &InvalidConfigurationInQueryException.InvalidConfigurationInQueryExceptionFromRust;
             unsafe readonly static delegate* unmanaged[Cdecl]<FFIString, IntPtr> InvalidQueryConstructorPtr = &InvalidQueryException.InvalidQueryExceptionFromRust;
             unsafe readonly static delegate* unmanaged[Cdecl]<FFIString, IntPtr> InvalidTypeExceptionConstructorPtr = &InvalidTypeException.InvalidTypeExceptionFromRust;
@@ -532,6 +533,7 @@ namespace Cassandra
                 internal readonly IntPtr already_shutdown_exception_constructor;
                 internal readonly IntPtr deserialization_exception_constructor;
                 internal readonly IntPtr function_failure_exception_constructor;
+                internal readonly IntPtr invalid_argument_exception_constructor;
                 internal readonly IntPtr invalid_configuration_in_query_constructor;
                 internal readonly IntPtr invalid_query_constructor;
                 internal readonly IntPtr invalid_type_exception_constructor;
@@ -551,6 +553,7 @@ namespace Cassandra
                     IntPtr alreadyShutdownException,
                     IntPtr deserializationException,
                     IntPtr functionFailureException,
+                    IntPtr invalidArgumentException,
                     IntPtr invalidConfigurationInQueryException,
                     IntPtr invalidQueryException,
                     IntPtr invalidTypeException,
@@ -569,6 +572,7 @@ namespace Cassandra
                     already_shutdown_exception_constructor = alreadyShutdownException;
                     deserialization_exception_constructor = deserializationException;
                     function_failure_exception_constructor = functionFailureException;
+                    invalid_argument_exception_constructor = invalidArgumentException;
                     invalid_configuration_in_query_constructor = invalidConfigurationInQueryException;
                     invalid_query_constructor = invalidQueryException;
                     invalid_type_exception_constructor = invalidTypeException;
@@ -603,6 +607,7 @@ namespace Cassandra
                     (IntPtr)AlreadyShutdownExceptionConstructorPtr,
                     (IntPtr)DeserializationExceptionConstructorPtr,
                     (IntPtr)FunctionFailureExceptionConstructorPtr,
+                    (IntPtr)InvalidArgumentExceptionConstructorPtr,
                     (IntPtr)InvalidConfigurationInQueryExceptionConstructorPtr,
                     (IntPtr)InvalidQueryConstructorPtr,
                     (IntPtr)InvalidTypeExceptionConstructorPtr,

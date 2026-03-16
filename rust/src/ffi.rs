@@ -523,6 +523,65 @@ pub struct FromRef;
 impl<T> origin_sealed::FromRefSealed for T where T: FFI<Origin = FromRef> {}
 impl<T> RefFFI for T where T: FFI<Origin = FromRef> {}
 
+pub mod blittable {
+    mod blittable_sealed {
+        // This is a sealed trait - its whole purpose is to be unnameable.
+        // This means we need to disable the check.
+        #[expect(unnameable_types)]
+        pub trait Sealed {}
+    }
+
+    /// Marker trait for types that are safe to pass across FFI boundaries.
+    ///
+    /// Blittable types have the same representation in managed (C#) and unmanaged (Rust) code.
+    /// This trait is sealed and can only be implemented for known FFI-safe types.
+    ///
+    /// Types that can be blittable include:
+    /// - Primitive types: integers, floats
+    /// - Our FFI types: `FFIStr`, `FFIBool`
+    pub trait Blittable: blittable_sealed::Sealed + Sized {}
+
+    // Implement Blittable for primitive types
+    impl blittable_sealed::Sealed for u8 {}
+    impl Blittable for u8 {}
+
+    impl blittable_sealed::Sealed for u16 {}
+    impl Blittable for u16 {}
+
+    impl blittable_sealed::Sealed for u32 {}
+    impl Blittable for u32 {}
+
+    impl blittable_sealed::Sealed for u64 {}
+    impl Blittable for u64 {}
+
+    impl blittable_sealed::Sealed for i8 {}
+    impl Blittable for i8 {}
+
+    impl blittable_sealed::Sealed for i16 {}
+    impl Blittable for i16 {}
+
+    impl blittable_sealed::Sealed for i32 {}
+    impl Blittable for i32 {}
+
+    impl blittable_sealed::Sealed for i64 {}
+    impl Blittable for i64 {}
+
+    impl blittable_sealed::Sealed for f32 {}
+    impl Blittable for f32 {}
+
+    impl blittable_sealed::Sealed for f64 {}
+    impl Blittable for f64 {}
+
+    // Implement Blittable for our FFI types
+    impl<'a> blittable_sealed::Sealed for super::FFIStr<'a> {}
+    impl<'a> Blittable for super::FFIStr<'a> {}
+
+    impl blittable_sealed::Sealed for super::FFIBool {}
+    impl Blittable for super::FFIBool {}
+}
+
+pub use blittable::Blittable;
+
 mod tests {
     /// ```compile_fail,E0499
     /// # use csharp_wrapper::ffi::{BridgedOwnedExclusivePtr, BridgedBorrowedExclusivePtr, FFI, BoxFFI, FromBox};
@@ -597,33 +656,45 @@ mod tests {
     /// let immref = ArcFFI::cloned_from_ptr(borrowed_ptr);
     /// ```
     fn _test_arc_ffi_cannot_dereference_borrowed_after_drop() {}
+
+    /// ```compile_fail,E0597
+    /// # use csharp_wrapper::ffi::FFISlice;
+    /// let ffi_slice = {
+    ///     let slice = vec![1u32, 2, 3];
+    ///     FFISlice::new(&slice)
+    /// };
+    /// assert_eq!(ffi_slice.as_slice(), &[1u32, 2, 3]);
+    /// ```
+    fn _test_ffi_slice_cannot_outlive_borrowed_data() {}
 }
 
 /*
- * Compound FFI types with length - byte slices and strings.
+ * Compound FFI types with length - slices and strings.
  */
 
-/// Represents a byte slice passed over FFI from Rust to C#.
-/// SAFETY: `ptr` must be a valid pointer to a byte array of length `len`.
+/// Represents a slice passed over FFI from Rust to C#.
+/// SAFETY: `ptr` must be a valid pointer to an array of length `len`.
 #[repr(C)]
-pub struct FFIByteSlice<'a> {
-    ptr: BridgedBorrowedSharedPtr<'a, u8>,
+pub struct FFISlice<'a, T: Sized + Blittable> {
+    ptr: BridgedBorrowedSharedPtr<'a, T>,
     len: usize,
 }
 
-impl<'a> FFIByteSlice<'a> {
-    pub(crate) fn new(slice: impl AsRef<[u8]>) -> Self {
-        let s = slice.as_ref();
+impl<'a, T: Sized + Blittable> FFISlice<'a, T> {
+    pub fn new(slice: &'a [T]) -> Self {
         let ptr = unsafe {
-            // SAFETY: slice.as_ptr() returns a valid reference to a byte slice.
-            // Lifetime is inherited from the slice reference, so it's safe to create
-            // a borrowed pointer with the same lifetime.
-            BridgedBorrowedSharedPtr::from_raw(s.as_ptr())
+            // SAFETY: slice.as_ptr() returns a valid pointer to a slice.
+            // Lifetime 'a is bound to the input slice reference, ensuring the
+            // returned FFISlice cannot outlive the data it points to.
+            BridgedBorrowedSharedPtr::from_raw(slice.as_ptr())
         };
-        FFIByteSlice { ptr, len: s.len() }
+        FFISlice {
+            ptr,
+            len: slice.len(),
+        }
     }
 
-    pub(crate) fn as_slice(&self) -> &[u8] {
+    pub fn as_slice(&self) -> &[T] {
         if self.len == 0 {
             return &[];
         }
@@ -637,29 +708,71 @@ impl<'a> FFIByteSlice<'a> {
     }
 }
 
+// Compile-time assertions for size and alignment of `FFISlice` to ensure it matches the expected layout.
+// Ensures ABI compatibility with C#'s representation i.e. (*const u8, usize) for FFISlice<'static, u8>.
+const _: [(); std::mem::size_of::<FFISlice<'static, u8>>()] =
+    [(); std::mem::size_of::<(*const u8, usize)>()];
+const _: [(); std::mem::align_of::<FFISlice<'static, u8>>()] =
+    [(); std::mem::align_of::<(*const u8, usize)>()];
+
 /// Represents a string passed over FFI from Rust to C#.
 /// SAFETY: `slice` must be a valid pointer a UTF-8 encoded string with correctly set length.
 #[repr(transparent)]
 pub struct FFIStr<'a> {
-    slice: FFIByteSlice<'a>,
+    slice: FFISlice<'a, u8>,
 }
 
 impl<'a> FFIStr<'a> {
-    pub(crate) fn new(s: impl AsRef<str>) -> Self {
+    pub(crate) fn new(s: &'a str) -> Self {
         Self {
-            slice: FFIByteSlice::new(s.as_ref().as_bytes()),
+            slice: FFISlice::new(s.as_bytes()),
         }
     }
 
     pub(crate) fn null() -> Self {
         Self {
-            slice: FFIByteSlice {
+            slice: FFISlice {
                 ptr: BridgedBorrowedSharedPtr::null(),
                 len: 0,
             },
         }
     }
 }
+
+// Compile-time assertions for size and alignment of `FFIStr` to ensure it matches the expected layout.
+// Ensures ABI compatibility with C#'s representation i.e. (*const u8, usize).
+const _: [(); std::mem::size_of::<FFIStr<'static>>()] =
+    [(); std::mem::size_of::<(*const u8, usize)>()];
+const _: [(); std::mem::align_of::<FFIStr<'static>>()] =
+    [(); std::mem::align_of::<(*const u8, usize)>()];
+
+/// Represents a boolean passed over FFI between Rust and C#.
+/// Uses u8 representation to match C#'s byte.
+/// SAFETY: Only 0 (false) and 1 (true) are valid values.
+#[repr(transparent)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FFIBool {
+    value: u8,
+}
+
+impl From<bool> for FFIBool {
+    fn from(value: bool) -> Self {
+        Self {
+            value: if value { 1 } else { 0 },
+        }
+    }
+}
+
+impl From<FFIBool> for bool {
+    fn from(value: FFIBool) -> Self {
+        value.value != 0
+    }
+}
+
+// Compile-time assertions for size and alignment of `FFIBool` to ensure it matches u8.
+// Ensures ABI compatibility with C#'s byte representation of bool.
+const _: [(); std::mem::size_of::<FFIBool>()] = [(); std::mem::size_of::<u8>()];
+const _: [(); std::mem::align_of::<FFIBool>()] = [(); std::mem::align_of::<u8>()];
 
 #[repr(transparent)]
 pub struct FFIPtr<'a, T: Sized> {
@@ -677,10 +790,6 @@ impl<T> Clone for FFIPtr<'_, T> {
 // Manual implementation to avoid `T: Copy` bound.
 impl<T> Copy for FFIPtr<'_, T> {}
 
-// Compile-time assertion that `FFIPtr` is pointer-sized.
-// Ensures ABI compatibility with C# (opaque GCHandle/IntPtr across FFI).
-const _: [(); std::mem::size_of::<FFIPtr<'_, ()>>()] = [(); std::mem::size_of::<*const ()>()];
-
 impl<'a, T> Debug for FFIPtr<'a, T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let ptr = self
@@ -690,6 +799,10 @@ impl<'a, T> Debug for FFIPtr<'a, T> {
         write!(f, "FFIPtr({:p})", ptr)
     }
 }
+
+// Compile-time assertion that `FFIPtr` is pointer-sized.
+// Ensures ABI compatibility with C# (opaque GCHandle/IntPtr across FFI).
+const _: [(); std::mem::size_of::<FFIPtr<'_, ()>>()] = [(); std::mem::size_of::<*const ()>()];
 
 pub(crate) type CSharpStr<'a> = FFIPtr<'a, c_char>;
 impl<'a> CSharpStr<'a> {
@@ -706,3 +819,29 @@ pub(crate) struct CSharpManagedStringPtr(FFIPtr<'static, CSharpManagedString>);
 
 pub(crate) type WriteStringCallback =
     extern "C" fn(FFIStr<'_>, CSharpManagedStringPtr) -> FFIException;
+
+/// Feeds each item from an iterator to a C FFI callback, one at a time.
+///
+/// This avoids materializing the full iterator into a `Vec`/`FFISlice`.
+/// The callback is invoked once per item with the context pointer and the item.
+///
+/// # Safety
+/// - `callback` must be a valid function pointer with C calling convention
+/// - `context` must remain valid for the duration of iteration
+#[expect(unused)]
+// The function is currently unused, but it will be useful when we need to pass slices from Rust to C# without materializing them.
+pub(crate) unsafe fn ffi_callback_for_each<Ctx: Copy, T>(
+    context: Ctx,
+    callback: unsafe extern "C" fn(Ctx, T) -> FFIException,
+    iter: impl Iterator<Item = T>,
+) -> FFIException {
+    for item in iter {
+        unsafe {
+            let res = callback(context, item);
+            if res.has_exception() {
+                return res;
+            }
+        }
+    }
+    FFIException::ok()
+}

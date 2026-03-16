@@ -43,7 +43,7 @@ namespace Cassandra
             [UnmanagedCallersOnly(CallConvs = new Type[] { typeof(CallConvCdecl) })]
             internal static unsafe FFIException WriteToString(FFIString str, IntPtr ptr)
             {
-                try 
+                try
                 {
                     var stringContainer = Unsafe.AsRef<StringContainer>((void*)ptr);
                     stringContainer.Value = str.ToManagedString();
@@ -63,43 +63,75 @@ namespace Cassandra
         }
 
         /// <summary>
-        /// Represents a byte slice passed over FFI boundary.
-        /// Used to pass byte arrays from Rust to C#.
+        /// Represents a slice (runtime-determined length array) passed over FFI boundary.
+        /// Used to pass slices from Rust to C#.
         /// </summary>
         [StructLayout(LayoutKind.Sequential)]
-        internal readonly struct FFIByteSlice
+        internal readonly struct FFISlice<T>
+            where T : unmanaged
         {
             internal readonly IntPtr ptr;
             internal readonly nuint len;
 
-            internal FFIByteSlice(IntPtr ptr, nuint len)
+            internal FFISlice(IntPtr ptr, nuint len)
             {
                 this.ptr = ptr;
                 this.len = len;
             }
 
-            internal Span<byte> ToSpan()
+            /// <summary>
+            /// Returns a zero-copy Span view over the Rust-owned memory.
+            /// The caller must not use the span beyond the lifetime of the Rust data it points into.
+            /// </summary>
+            internal unsafe Span<T> ToSpan()
             {
                 if (len > int.MaxValue)
                 {
-                    // Byte slices in Rust can be larger than maximum Span<byte> length.
+                    // Slices in Rust can be larger than maximum Span<T> length.
                     // This should never happen in practice, but we guard against it to avoid UB.
-                    Environment.FailFast("FFIByteSlice length exceeds maximum Span<byte> length.");
-                    return Span<byte>.Empty;
+                    Environment.FailFast("FFISlice length exceeds maximum Span<T> length.");
                 }
-                unsafe
+
+                try
                 {
-                    // ToSpan() is called in callbacks so we catch any exceptions here to avoid UB.
-                    try
+                    if (len == 0)
                     {
-                        return new Span<byte>((void*)ptr, (int)len);
+                        return Span<T>.Empty;
                     }
-                    catch (Exception ex)
+
+                    if (ptr == IntPtr.Zero)
                     {
-                        Environment.FailFast("Failed to create Span<byte> from FFIByteSlice", ex);
-                        return Span<byte>.Empty;
+                        // Non-zero length with null pointer is a contract violation at the FFI boundary.
+                        Environment.FailFast("FFISlice has non-zero length with null pointer.");
                     }
+
+                    return new Span<T>((T*)ptr.ToPointer(), (int)len);
                 }
+                catch (Exception ex)
+                {
+                    Environment.FailFast("Failed to create Span<T> from FFISlice", ex);
+                    return Span<T>.Empty;
+                }
+            }
+        }
+
+        /// <summary>
+        /// Non-generic wrapper for FFISlice used in UnmanagedCallersOnly methods.
+        /// This is required for .NET 8 compatibility, as .NET 8 doesn't recognize
+        /// generic structs as blittable in UnmanagedCallersOnly contexts.
+        /// Has identical memory layout to FFISlice, allowing safe reinterpretation.
+        /// </summary>
+        [StructLayout(LayoutKind.Sequential)]
+        internal readonly struct FFISliceRaw
+        {
+            internal readonly IntPtr ptr;
+            internal readonly nuint len;
+
+            // Reinterprets this non-generic slice as a typed FFISlice<T>.
+            // This is safe because both structs have identical memory layout.
+            internal FFISlice<T> As<T>() where T : unmanaged
+            {
+                return Unsafe.As<FFISliceRaw, FFISlice<T>>(ref Unsafe.AsRef(in this));
             }
         }
 
@@ -127,17 +159,16 @@ namespace Cassandra
         [StructLayout(LayoutKind.Sequential)]
         internal readonly struct FFIBool : IBridgedTaskResult
         {
-            [MarshalAs(UnmanagedType.U1)]
-            private readonly bool value;
+            private readonly byte value;
 
             internal FFIBool(bool value)
             {
-                this.value = value;
+                this.value = value ? (byte)1 : (byte)0;
             }
 
             // Must be public, because `implicit operator` requires it.
             public static implicit operator FFIBool(bool value) => new(value);
-            public static implicit operator bool(FFIBool b) => b.value;
+            public static implicit operator bool(FFIBool b) => b.value != 0;
 
             /// <summary>
             /// This shall be called by Rust code when the operation is completed.
@@ -485,7 +516,7 @@ namespace Cassandra
             unsafe readonly static delegate* unmanaged[Cdecl]<FFIString, IntPtr> InvalidTypeExceptionConstructorPtr = &InvalidTypeException.InvalidTypeExceptionFromRust;
             unsafe readonly static delegate* unmanaged[Cdecl]<FFIString, IntPtr> NoHostAvailableExceptionConstructorPtr = &NoHostAvailableException.NoHostAvailableExceptionFromRust;
             unsafe readonly static delegate* unmanaged[Cdecl]<int, IntPtr> OperationTimedOutExceptionConstructorPtr = &OperationTimedOutException.OperationTimedOutExceptionFromRust;
-            unsafe readonly static delegate* unmanaged[Cdecl]<FFIString, FFIByteSlice, IntPtr> PreparedQueryNotFoundExceptionConstructorPtr = &PreparedQueryNotFoundException.PreparedQueryNotFoundExceptionFromRust;
+            unsafe readonly static delegate* unmanaged[Cdecl]<FFIString, FFISliceRaw, IntPtr> PreparedQueryNotFoundExceptionConstructorPtr = &PreparedQueryNotFoundException.PreparedQueryNotFoundExceptionFromRust;
             unsafe readonly static delegate* unmanaged[Cdecl]<FFIString, IntPtr> RequestInvalidExceptionConstructorPtr = &RequestInvalidException.RequestInvalidExceptionFromRust;
             unsafe readonly static delegate* unmanaged[Cdecl]<FFIString, IntPtr> RustExceptionConstructorPtr = &RustException.RustExceptionFromRust;
             unsafe readonly static delegate* unmanaged[Cdecl]<FFIString, IntPtr> SerializationExceptionConstructorPtr = &SerializationException.SerializationExceptionFromRust;
@@ -559,7 +590,7 @@ namespace Cassandra
                     unauthorized_exception_constructor = unauthorizedException;
                 }
             }
-            
+
             internal static readonly Constructors* ConstructorsPtr;
 
             /// <summary>

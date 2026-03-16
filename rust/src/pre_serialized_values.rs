@@ -1,6 +1,6 @@
 use crate::error_conversion::FFIException;
 use crate::ffi::{
-    BoxFFI, BridgedBorrowedExclusivePtr, BridgedOwnedExclusivePtr, FFI, FFIByteSlice, FromBox,
+    BoxFFI, BridgedBorrowedExclusivePtr, BridgedOwnedExclusivePtr, FFI, FFISlice, FromBox,
 };
 use crate::task::ExceptionConstructors;
 use scylla_cql::frame::response::result::{ColumnType, NativeType};
@@ -12,7 +12,7 @@ use scylla_cql::serialize::writers::CellWriter;
 /// A single pre-serialized cell: either a C#-backed value, or a
 /// logical null/unset marker.
 pub enum PreSerializedCell<'a> {
-    Value(FFIByteSlice<'a>),
+    Value(FFISlice<'a, u8>),
     Null,
     Unset,
 }
@@ -58,7 +58,7 @@ impl PreSerializedValues {
     /// Safety:
     /// - The C# buffer pointed to by `value` must remain valid and pinned for the duration
     ///   of this call. The data is copied into the internal buffer immediately.
-    pub(super) fn add_value(&mut self, value: FFIByteSlice<'_>) -> Result<(), SerializationError> {
+    pub(super) fn add_value(&mut self, value: FFISlice<'_, u8>) -> Result<(), SerializationError> {
         let cell = PreSerializedCell::Value(value);
         self.serialized_values.add_value(&cell, dummy_column_type())
     }
@@ -97,7 +97,7 @@ pub extern "C" fn pre_serialized_values_new() -> BridgedOwnedExclusivePtr<PreSer
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn pre_serialized_values_add_value(
     values_ptr: BridgedBorrowedExclusivePtr<'_, PreSerializedValues>,
-    value: FFIByteSlice<'_>,
+    value: FFISlice<'_, u8>,
     constructors: &'static ExceptionConstructors,
 ) -> FFIException {
     let Some(values) = BoxFFI::as_mut_ref(values_ptr) else {

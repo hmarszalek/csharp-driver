@@ -104,8 +104,8 @@ namespace Cassandra
                 fixed (byte* ptr = buf)
                 {
                     IntPtr valuePtr = (IntPtr)ptr;
-                    UIntPtr valueLen = (UIntPtr)buf.Length;
-                    RustBridge.FFIByteSlice valueSlice = new(valuePtr, valueLen);
+                    nuint valueLen = (nuint)buf.Length;
+                    RustBridge.FFISlice<byte> valueSlice = new(valuePtr, valueLen);
 
                     var res = pre_serialized_values_add_value(handle, valueSlice, (IntPtr)RustBridge.Globals.ConstructorsPtr);
                     try
@@ -136,7 +136,7 @@ namespace Cassandra
         [DllImport(NativeLibrary.CSharpWrapper, CallingConvention = CallingConvention.Cdecl)]
         private static extern RustBridge.FFIException pre_serialized_values_add_value(
             IntPtr valuesPtr,
-            RustBridge.FFIByteSlice valueSlice,
+            RustBridge.FFISlice<byte> valueSlice,
             IntPtr constructorsPtr);
     }
 }

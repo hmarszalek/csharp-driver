@@ -28,7 +28,7 @@ namespace Cassandra
         // Or inline if no logic intervenes:
         //
         //   session_query_with_values(..., SerializationHandler.InitializeSerializedValues(queryValues).TakeNativeHandle());
-        
+
         /// <summary>
         /// Transfers ownership of the underlying native handle to the caller.
         /// The ISerializedValues instance yields ownership and will no longer free the handle upon disposal.

@@ -11,7 +11,7 @@ namespace Cassandra
     /// </summary>
     /// <remarks>
     /// <para>
-    /// This class provides methods to create, manage, and interact with a session 
+    /// This class provides methods to create, manage, and interact with a session
     /// resource that is owned and managed by Rust code. It uses P/Invoke to call
     /// into the Rust library for session operations.
     /// </para>
@@ -41,7 +41,7 @@ namespace Cassandra
 
         /// <summary>
         /// Executes a query with already-serialized values.
-        /// 
+        ///
         /// Note: This method transfers ownership of valuesPtr to native code, thus invalidating the SerializedValues instance after use.
         /// Values, once passed to this method, should not be used again in managed code, it's the Rust side's responsibility to handle retries
         /// and to free the memory.
@@ -139,7 +139,7 @@ namespace Cassandra
         {
             return RunAsyncWithIncrement<ManuallyDestructible>((tcb, ptr) => session_query_bound(tcb, ptr, preparedStatement));
         }
-        
+
         /// <summary>
         /// Executes a prepared statement with bound values.
         /// </summary>

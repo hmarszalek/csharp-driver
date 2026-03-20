@@ -266,8 +266,8 @@ namespace Cassandra.IntegrationTests.Core
                 }
             });
         }
-        
-                /// Tests that void results return empty RowSets
+
+        /// Tests that void results return empty RowSets
         ///
         /// Empty_RowSet_Test tests that empty RowSets are returned for void results. It creates a simple table and performs
         /// an INSERT query on the table, returning an empty RowSet. It then verifies the RowSet metadata is populated

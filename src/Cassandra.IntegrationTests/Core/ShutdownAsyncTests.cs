@@ -42,7 +42,7 @@ namespace Cassandra.IntegrationTests.Core
 
             // Verify session works before shutdown
             Assert.DoesNotThrow(() => localSession.Execute(cqlSelect));
-            
+
             // Begin shutdown
             localSession.ShutdownAsync().Wait();
 
@@ -156,7 +156,7 @@ namespace Cassandra.IntegrationTests.Core
             var preparedStatementWithValues = localSession.Prepare(cqlInsert);
 
             var allTasks = new System.Collections.Generic.List<Task>();
-            
+
             using (var shutdownStarted = new ManualResetEventSlim(false))
             {
                 for (int i = 0; i < 10; i++)

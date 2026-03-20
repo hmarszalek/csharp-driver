@@ -52,7 +52,7 @@ namespace Cassandra
         }
 
         /// <summary>
-        /// Gets if TCP keep-alive must be used 
+        /// Gets if TCP keep-alive must be used
         /// </summary>
         public bool? KeepAlive
         {
@@ -129,18 +129,18 @@ namespace Cassandra
         }
 
         /// <summary>
-        /// Sets if TCP keep-alive must be used 
+        /// Sets if TCP keep-alive must be used
         /// </summary>
         public SocketOptions SetKeepAlive(bool keepAlive)
         {
             _keepAlive = keepAlive;
             return this;
         }
-        
+
         /// <summary>
         /// Sets the number of milliseconds to wait between TCP keep-alive probes.
         /// This option is only used if KeepAlive is set to true.
-        /// </summary> 
+        /// </summary>
         public SocketOptions SetKeepAliveIntervalMillis(int keepAliveIntervalMillis)
         {
             _keepAliveIntervalMillis = keepAliveIntervalMillis;

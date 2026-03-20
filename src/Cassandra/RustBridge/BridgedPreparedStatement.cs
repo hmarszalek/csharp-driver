@@ -43,7 +43,7 @@ namespace Cassandra
                 void* columnsPtr = Unsafe.AsPointer(ref columns);
                 FillVariablesMetadata((IntPtr)columnsPtr, (IntPtr)setColumnMetaPtr);
             }
-            
+
             var metadata = new RowSetMetadata
             {
                 Columns = columns

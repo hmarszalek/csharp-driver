@@ -287,14 +287,14 @@ i18n = ["Babel (>=2.7)"]
 
 [[package]]
 name = "markdown-it-py"
-version = "3.0.0"
+version = "4.0.0"
 description = "Python port of markdown-it. Markdown parsing, done right!"
 optional = false
-python-versions = ">=3.8"
+python-versions = ">=3.10"
 groups = ["main"]
 files = [
-    {file = "markdown-it-py-3.0.0.tar.gz", hash = "sha256:e3f60a94fa066dc52ec76661e37c851cb232d92f9886b15cb560aaada2df8feb"},
-    {file = "markdown_it_py-3.0.0-py3-none-any.whl", hash = "sha256:355216845c60bd96232cd8d8c40e8f9765cc86f46880e43a8fd22dc1a1a8cab1"},
+    {file = "markdown_it_py-4.0.0-py3-none-any.whl", hash = "sha256:87327c59b172c5011896038353a81343b6754500a08cd7a4973bb48c6d578147"},
+    {file = "markdown_it_py-4.0.0.tar.gz", hash = "sha256:cb0a2b4aa34f932c007117b194e945bd74e0ec24133ceb5bac59009cda1cb9f3"},
 ]
 
 [package.dependencies]
@@ -302,13 +302,12 @@ mdurl = ">=0.1,<1.0"
 
 [package.extras]
 benchmarking = ["psutil", "pytest", "pytest-benchmark"]
-code-style = ["pre-commit (>=3.0,<4.0)"]
-compare = ["commonmark (>=0.9,<1.0)", "markdown (>=3.4,<4.0)", "mistletoe (>=1.0,<2.0)", "mistune (>=2.0,<3.0)", "panflute (>=2.3,<3.0)"]
+compare = ["commonmark (>=0.9,<1.0)", "markdown (>=3.4,<4.0)", "markdown-it-pyrs", "mistletoe (>=1.0,<2.0)", "mistune (>=3.0,<4.0)", "panflute (>=2.3,<3.0)"]
 linkify = ["linkify-it-py (>=1,<3)"]
-plugins = ["mdit-py-plugins"]
+plugins = ["mdit-py-plugins (>=0.5.0)"]
 profiling = ["gprof2dot"]
-rtd = ["jupyter_sphinx", "mdit-py-plugins", "myst-parser", "pyyaml", "sphinx", "sphinx-copybutton", "sphinx-design", "sphinx_book_theme"]
-testing = ["coverage", "pytest", "pytest-cov", "pytest-regressions"]
+rtd = ["ipykernel", "jupyter_sphinx", "mdit-py-plugins (>=0.5.0)", "myst-parser", "pyyaml", "sphinx", "sphinx-book-theme (>=1.0,<2.0)", "sphinx-copybutton", "sphinx-design"]
+testing = ["coverage", "pytest", "pytest-cov", "pytest-regressions", "requests"]
 
 [[package]]
 name = "markupsafe"
@@ -415,30 +414,30 @@ files = [
 
 [[package]]
 name = "myst-parser"
-version = "4.0.1"
+version = "5.0.0"
 description = "An extended [CommonMark](https://spec.commonmark.org/) compliant parser,"
 optional = false
-python-versions = ">=3.10"
+python-versions = ">=3.11"
 groups = ["main"]
 files = [
-    {file = "myst_parser-4.0.1-py3-none-any.whl", hash = "sha256:9134e88959ec3b5780aedf8a99680ea242869d012e8821db3126d427edc9c95d"},
-    {file = "myst_parser-4.0.1.tar.gz", hash = "sha256:5cfea715e4f3574138aecbf7d54132296bfd72bb614d31168f48c477a830a7c4"},
+    {file = "myst_parser-5.0.0-py3-none-any.whl", hash = "sha256:ab31e516024918296e169139072b81592336f2fef55b8986aa31c9f04b5f7211"},
+    {file = "myst_parser-5.0.0.tar.gz", hash = "sha256:f6f231452c56e8baa662cc352c548158f6a16fcbd6e3800fc594978002b94f3a"},
 ]
 
 [package.dependencies]
-docutils = ">=0.19,<0.22"
+docutils = ">=0.20,<0.23"
 jinja2 = "*"
-markdown-it-py = ">=3.0,<4.0"
-mdit-py-plugins = ">=0.4.1,<1.0"
+markdown-it-py = ">=4.0,<5.0"
+mdit-py-plugins = ">=0.5,<1.0"
 pyyaml = "*"
-sphinx = ">=7,<9"
+sphinx = ">=8,<10"
 
 [package.extras]
 code-style = ["pre-commit (>=4.0,<5.0)"]
 linkify = ["linkify-it-py (>=2.0,<3.0)"]
-rtd = ["ipython", "sphinx (>=7)", "sphinx-autodoc2 (>=0.5.0,<0.6.0)", "sphinx-book-theme (>=1.1,<2.0)", "sphinx-copybutton", "sphinx-design", "sphinx-pyscript", "sphinx-tippy (>=0.4.3)", "sphinx-togglebutton", "sphinxext-opengraph (>=0.9.0,<0.10.0)", "sphinxext-rediraffe (>=0.2.7,<0.3.0)"]
-testing = ["beautifulsoup4", "coverage[toml]", "defusedxml", "pygments (<2.19)", "pytest (>=8,<9)", "pytest-cov", "pytest-param-files (>=0.6.0,<0.7.0)", "pytest-regressions", "sphinx-pytest"]
-testing-docutils = ["pygments", "pytest (>=8,<9)", "pytest-param-files (>=0.6.0,<0.7.0)"]
+rtd = ["ipython", "sphinx (>=8)", "sphinx-autodoc2 (>=0.5.0,<0.6.0)", "sphinx-book-theme (>=1.1,<2.0)", "sphinx-copybutton", "sphinx-design", "sphinx-pyscript", "sphinx-tippy (>=0.4.3)", "sphinx-togglebutton", "sphinxext-opengraph (>=0.13.0,<0.14.0)", "sphinxext-rediraffe (>=0.3.0,<0.4.0)"]
+testing = ["beautifulsoup4", "coverage[toml]", "defusedxml", "pygments (<2.20)", "pytest (>=9,<10)", "pytest-cov", "pytest-param-files (>=0.6.0,<0.7.0)", "pytest-regressions", "sphinx-pytest (>=0.3.0,<0.4.0)"]
+testing-docutils = ["pygments", "pytest (>=9,<10)", "pytest-param-files (>=0.6.0,<0.7.0)"]
 
 [[package]]
 name = "packaging"
@@ -736,14 +735,14 @@ test = ["httpx", "pytest (>=6)"]
 
 [[package]]
 name = "sphinx-collapse"
-version = "0.1.3"
+version = "0.1.4"
 description = "Collapse extension for Sphinx."
 optional = false
 python-versions = ">=3.7"
 groups = ["main"]
 files = [
-    {file = "sphinx_collapse-0.1.3-py3-none-any.whl", hash = "sha256:85fadb2ec8769b93fd04276538668fa96239ef60c20c4a9eaa3e480387a6e65b"},
-    {file = "sphinx_collapse-0.1.3.tar.gz", hash = "sha256:cae141e6f03ecd52ed246a305a69e1b0d5d05e6cdf3fe803d40d583ad6ad895a"},
+    {file = "sphinx_collapse-0.1.4-py3-none-any.whl", hash = "sha256:76e9fa531bafb4984d6ef5f3dbe311982837f5965b7a35eda013bbd9dd41445e"},
+    {file = "sphinx_collapse-0.1.4.tar.gz", hash = "sha256:ba860e50839c026cd1abcc164e1e7cb18bcc11c8214150e34a6550461be3229f"},
 ]
 
 [package.dependencies]
@@ -789,13 +788,14 @@ sphinx = ">=1.8"
 
 [[package]]
 name = "sphinx-multiversion-scylla"
-version = "0.3.2"
+version = "0.3.7"
 description = "Add support for multiple versions to sphinx"
 optional = false
 python-versions = "*"
 groups = ["main"]
 files = [
-    {file = "sphinx_multiversion_scylla-0.3.2.tar.gz", hash = "sha256:f415311273228f4f766c36256503da8e2ce01f9d13423f3fcee3160d6284852b"},
+    {file = "sphinx_multiversion_scylla-0.3.7-py3-none-any.whl", hash = "sha256:6205d261a77c90b7ea3105311d1d56014736a5148966133c34344512bb8c4e4f"},
+    {file = "sphinx_multiversion_scylla-0.3.7.tar.gz", hash = "sha256:fc1ddd58e82cfd8810c1be6db8717a244043c04c1c632e9bd1436415d1db0d3b"},
 ]
 
 [package.dependencies]
@@ -822,26 +822,26 @@ test = ["tox"]
 
 [[package]]
 name = "sphinx-scylladb-theme"
-version = "1.8.8"
+version = "1.9.1"
 description = "A Sphinx Theme for ScyllaDB documentation projects"
 optional = false
-python-versions = "<4.0,>=3.10"
+python-versions = ">=3.11"
 groups = ["main"]
 files = [
-    {file = "sphinx_scylladb_theme-1.8.8-py3-none-any.whl", hash = "sha256:9b37f58b745bfc818b6f0869cbcc414a3ad6658023b22a6abbec44da5c09cf80"},
-    {file = "sphinx_scylladb_theme-1.8.8.tar.gz", hash = "sha256:15af599424f8b2ddbf14644b267c0bd31bc3fbbd64bca5b97d7b31bdb84d2c3d"},
+    {file = "sphinx_scylladb_theme-1.9.1-py3-none-any.whl", hash = "sha256:6156d60befc3da03bd11991fec9bc590e27ce7cc4ab05aa334edd5611424b106"},
+    {file = "sphinx_scylladb_theme-1.9.1.tar.gz", hash = "sha256:2ba6367f005d2c68eee1916cc16385989b8e53bbddcc81193003bdeb3bd3415e"},
 ]
 
 [package.dependencies]
-beautifulsoup4 = ">=4.12.3,<5.0.0"
-pyyaml = ">=6.0.1,<7.0.0"
-setuptools = ">=70.1.1,<81.0.0"
-sphinx-collapse = ">=0.1.1,<0.2.0"
-sphinx-copybutton = ">=0.5.2,<0.6.0"
-sphinx-notfound-page = ">=1.0.4,<2.0.0"
-Sphinx-Substitution-Extensions = ">=2022.2.16,<2026.0.0"
-sphinx-tabs = ">=3.4.5,<4.0.0"
-sphinxcontrib-mermaid = ">=1.0.0,<2.0.0"
+beautifulsoup4 = ">=4.12.3,<5"
+pyyaml = ">=6.0.1,<7"
+setuptools = ">=70.1.1,<83.0.0"
+sphinx-collapse = ">=0.1.4,<0.2"
+sphinx-copybutton = ">=0.5.2,<0.6"
+sphinx-notfound-page = ">=1.0.4,<2"
+sphinx-substitution-extensions = ">=2022.2.16,<2027.0.0"
+sphinx-tabs = ">=3.4.5,<4"
+sphinxcontrib-mermaid = ">=1,<3"
 
 [[package]]
 name = "sphinx-sitemap"
@@ -1309,4 +1309,4 @@ files = [
 [metadata]
 lock-version = "2.1"
 python-versions = "^3.13"
-content-hash = "431c6ea262aa9b219a6ef6590fea6b4cf6fecb7d7b84c627566fb1bf069f438d"
+content-hash = "4139dde59a2e59fd6a150e3e7746253046622d18a7af181e0e8543766c3bc83e"

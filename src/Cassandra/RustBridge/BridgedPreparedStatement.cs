@@ -19,7 +19,10 @@ namespace Cassandra
         internal bool IsLwt()
         {
             FFIBool isLwt = false;
-            RunWithIncrement(handle => prepared_statement_is_lwt(handle, out isLwt));
+            unsafe
+            {
+                RunWithIncrement(handle => prepared_statement_is_lwt(handle, out isLwt, (IntPtr)Globals.ConstructorsPtr));
+            }
             return isLwt;
         }
 
@@ -44,7 +47,8 @@ namespace Cassandra
                     prepared_statement_fill_column_specs_metadata(
                         handle,
                         (IntPtr)Unsafe.AsPointer(ref columns),
-                        (IntPtr)setColumnMetaPtr
+                        (IntPtr)setColumnMetaPtr,
+                        (IntPtr)Globals.ConstructorsPtr
                     )
                 );
             }
@@ -58,18 +62,21 @@ namespace Cassandra
         }
 
         [DllImport("csharp_wrapper", CallingConvention = CallingConvention.Cdecl)]
-        unsafe private static extern FFIMaybeException prepared_statement_is_lwt(IntPtr prepared_statement, out FFIBool isLwt);
+        unsafe private static extern FFIMaybeException prepared_statement_is_lwt(IntPtr prepared_statement, out FFIBool isLwt, IntPtr constructors);
 
         [DllImport("csharp_wrapper", CallingConvention = CallingConvention.Cdecl)]
-        unsafe private static extern FFIMaybeException prepared_statement_get_variables_column_specs_count(IntPtr prepared_statement, out nuint count);
+        unsafe private static extern FFIMaybeException prepared_statement_get_variables_column_specs_count(IntPtr prepared_statement, out nuint count, IntPtr constructors);
 
         [DllImport("csharp_wrapper", CallingConvention = CallingConvention.Cdecl)]
-        unsafe private static extern FFIMaybeException prepared_statement_fill_column_specs_metadata(IntPtr prepared_statement, IntPtr columnsPtr, IntPtr metadataSetter);
+        unsafe private static extern FFIMaybeException prepared_statement_fill_column_specs_metadata(IntPtr prepared_statement, IntPtr columnsPtr, IntPtr metadataSetter, IntPtr constructors);
 
         private nuint GetVariablesColumnSpecsCount()
         {
             nuint count = 0;
-            RunWithIncrement(handle => prepared_statement_get_variables_column_specs_count(handle, out count));
+            unsafe
+            {
+                RunWithIncrement(handle => prepared_statement_get_variables_column_specs_count(handle, out count, (IntPtr)Globals.ConstructorsPtr));
+            }
             return count;
         }
 

@@ -1,5 +1,6 @@
 use std::convert::Infallible;
 use std::sync::Arc;
+use std::sync::RwLock as StdRwLock;
 
 use scylla::client::session::Session;
 use scylla::cluster::ClusterState;
@@ -267,7 +268,9 @@ pub extern "C" fn session_prepare(
 
         tracing::trace!("[FFI] Statement prepared");
 
-        Ok(Arc::new(BridgedPreparedStatement { inner: ps }))
+        Ok(Arc::new(BridgedPreparedStatement {
+            inner: StdRwLock::new(ps),
+        }))
     })
 }
 
@@ -287,7 +290,17 @@ pub extern "C" fn session_query_bound(
     let session_guard_res = session_arc.try_read_owned();
 
     // Clone the prepared statement to move it into the async task.
-    let prepared_statement = bridged_prepared.inner.clone();
+    // We need to acquire the lock here in order to clone the prepared statement.
+    let prepared_statement_result: Result<_, MaybeShutdownError<PagerExecutionError>> =
+        bridged_prepared
+            .inner
+            .read()
+            .map(|prepared_guard| prepared_guard.clone())
+            .map_err(|err| {
+                MaybeShutdownError::LockError(format!(
+                    "Failed to read prepared statement for bound query: {err}"
+                ))
+            });
 
     BridgedFuture::spawn::<_, _, MaybeShutdownError<PagerExecutionError>, _>(tcb, async move {
         tracing::debug!("[FFI] Executing prepared statement");
@@ -302,6 +315,8 @@ pub extern "C" fn session_query_bound(
         let Some(session) = session_guard.session.as_ref() else {
             return Err(MaybeShutdownError::AlreadyShutdown);
         };
+
+        let prepared_statement = prepared_statement_result?;
 
         // Lock is held for the entire duration of the query operation,
         // preventing shutdown until this future completes
@@ -343,7 +358,17 @@ pub extern "C" fn session_query_bound_with_values(
     let session_guard_res = session_arc.try_read_owned();
 
     // Clone the prepared statement to move it into the async task.
-    let prepared_statement = bridged_prepared.inner.clone();
+    // We need to acquire the lock here in order to clone the prepared statement.
+    let prepared_statement_result: Result<_, MaybeShutdownError<PagerExecutionError>> =
+        bridged_prepared
+            .inner
+            .read()
+            .map(|prepared_guard| prepared_guard.clone())
+            .map_err(|err| {
+                MaybeShutdownError::LockError(format!(
+                    "Failed to read prepared statement for bound query with values: {err}"
+                ))
+            });
 
     BridgedFuture::spawn::<_, _, MaybeShutdownError<PagerExecutionError>, _>(tcb, async move {
         tracing::debug!("[FFI] Executing prepared statement");
@@ -358,6 +383,8 @@ pub extern "C" fn session_query_bound_with_values(
         let Some(session) = session_guard.session.as_ref() else {
             return Err(MaybeShutdownError::AlreadyShutdown);
         };
+
+        let prepared_statement = prepared_statement_result?;
 
         // Convert our FFI wrapper into SerializedValues by consuming it.
         let serialized_values: SerializedValues = values_box.into_serialized_values();

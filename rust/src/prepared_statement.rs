@@ -1,12 +1,14 @@
 use crate::error_conversion::FFIMaybeException;
 use crate::ffi::{ArcFFI, BridgedBorrowedSharedPtr, FFI, FFIBool, FFIPtr, FFIStr, FromArc, RefFFI};
 use crate::row_set::column_type_to_code;
+use crate::task::ExceptionConstructors;
 use scylla::frame::response::result::ColumnType;
 use scylla::statement::prepared::PreparedStatement;
+use std::sync::RwLock;
 
 #[derive(Debug)]
 pub struct BridgedPreparedStatement {
-    pub(crate) inner: PreparedStatement,
+    pub(crate) inner: RwLock<PreparedStatement>,
 }
 
 impl FFI for BridgedPreparedStatement {
@@ -17,11 +19,23 @@ impl FFI for BridgedPreparedStatement {
 pub extern "C" fn prepared_statement_is_lwt(
     prepared_statement_ptr: BridgedBorrowedSharedPtr<'_, BridgedPreparedStatement>,
     is_lwt: *mut FFIBool,
+    constructors: &'static ExceptionConstructors,
 ) -> FFIMaybeException {
     let prepared_statement = ArcFFI::as_ref(prepared_statement_ptr)
         .expect("valid and non-null BridgedPreparedStatement pointer");
 
-    let is_lwt_value = prepared_statement.inner.is_confirmed_lwt();
+    let guard =
+        match prepared_statement.inner.read() {
+            Ok(guard) => guard,
+            Err(err) => {
+                let ex = constructors.rust_exception_constructor.construct_from_rust(&format!(
+                "BridgedPreparedStatement encountered lock error while reading is_lwt: {err}"
+            ));
+                return FFIMaybeException::from_exception(ex);
+            }
+        };
+
+    let is_lwt_value = guard.is_confirmed_lwt();
 
     unsafe {
         *is_lwt = is_lwt_value.into();
@@ -35,11 +49,23 @@ pub extern "C" fn prepared_statement_is_lwt(
 pub extern "C" fn prepared_statement_get_variables_column_specs_count(
     prepared_statement_ptr: BridgedBorrowedSharedPtr<'_, BridgedPreparedStatement>,
     out_num_fields: *mut usize,
+    constructors: &'static ExceptionConstructors,
 ) -> FFIMaybeException {
-    let prepared_statement = ArcFFI::as_ref(prepared_statement_ptr).unwrap();
+    let prepared_statement = ArcFFI::as_ref(prepared_statement_ptr)
+        .expect("valid and non-null BridgedPreparedStatement pointer");
+
+    let guard = match prepared_statement.inner.read() {
+        Ok(guard) => guard,
+        Err(err) => {
+            let ex = constructors.rust_exception_constructor.construct_from_rust(format!(
+                "BridgedPreparedStatement encountered lock error while reading variable metadata count: {err}"
+            ));
+            return FFIMaybeException::from_exception(ex);
+        }
+    };
 
     unsafe {
-        *out_num_fields = prepared_statement.inner.get_variable_col_specs().len();
+        *out_num_fields = guard.get_variable_col_specs().len();
     }
 
     FFIMaybeException::ok()
@@ -74,16 +100,23 @@ pub extern "C" fn prepared_statement_fill_column_specs_metadata(
     prepared_statement_ptr: BridgedBorrowedSharedPtr<'_, BridgedPreparedStatement>,
     columns_ptr: ColumnsPtr,
     set_prepared_statement_variables_metadata: SetPreparedStatementVariablesMetadata,
+    constructors: &'static ExceptionConstructors,
 ) -> FFIMaybeException {
-    let prepared_statement = ArcFFI::as_ref(prepared_statement_ptr).unwrap();
+    let prepared_statement = ArcFFI::as_ref(prepared_statement_ptr)
+        .expect("valid and non-null BridgedPreparedStatement pointer");
+
+    let guard = match prepared_statement.inner.read() {
+        Ok(guard) => guard,
+        Err(err) => {
+            let ex = constructors.rust_exception_constructor.construct_from_rust(format!(
+                "BridgedPreparedStatement encountered lock error while filling variable metadata: {err}"
+            ));
+            return FFIMaybeException::from_exception(ex);
+        }
+    };
 
     // Iterate column specs and call the metadata setter
-    for (i, spec) in prepared_statement
-        .inner
-        .get_variable_col_specs()
-        .iter()
-        .enumerate()
-    {
+    for (i, spec) in guard.get_variable_col_specs().iter().enumerate() {
         let name = FFIStr::new(spec.name());
         let keyspace = FFIStr::new(spec.table_spec().ks_name());
         let table = FFIStr::new(spec.table_spec().table_name());

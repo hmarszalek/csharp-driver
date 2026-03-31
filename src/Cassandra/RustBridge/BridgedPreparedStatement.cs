@@ -53,7 +53,10 @@ namespace Cassandra
         internal bool IsLwt()
         {
             FFIBool isLwt = false;
-            RunWithIncrement(handle => prepared_statement_is_lwt(handle, out isLwt));
+            unsafe
+            {
+                RunWithIncrement(handle => prepared_statement_is_lwt(handle, out isLwt));
+            }
             return isLwt;
         }
 
@@ -69,7 +72,10 @@ namespace Cassandra
         private nuint GetVariablesColumnSpecsCount()
         {
             nuint count = 0;
-            RunWithIncrement(handle => prepared_statement_get_variables_column_specs_count(handle, out count));
+            unsafe
+            {
+                RunWithIncrement(handle => prepared_statement_get_variables_column_specs_count(handle, out count));
+            }
             return count;
         }
 

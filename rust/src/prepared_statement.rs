@@ -3,10 +3,11 @@ use crate::ffi::{ArcFFI, BridgedBorrowedSharedPtr, FFI, FFIBool, FFIPtr, FFIStr,
 use crate::row_set::column_type_to_code;
 use scylla::frame::response::result::ColumnType;
 use scylla::statement::prepared::PreparedStatement;
+use std::sync::RwLock;
 
 #[derive(Debug)]
 pub struct BridgedPreparedStatement {
-    pub(crate) inner: PreparedStatement,
+    pub(crate) inner: RwLock<PreparedStatement>,
 }
 
 impl FFI for BridgedPreparedStatement {
@@ -19,10 +20,16 @@ pub extern "C" fn prepared_statement_get_variables_column_specs_count(
     prepared_statement_ptr: BridgedBorrowedSharedPtr<'_, BridgedPreparedStatement>,
     out_num_fields: *mut usize,
 ) -> FFIMaybeException {
-    let prepared_statement = ArcFFI::as_ref(prepared_statement_ptr).unwrap();
+    let prepared_statement = ArcFFI::as_ref(prepared_statement_ptr)
+        .expect("valid and non-null BridgedPreparedStatement pointer");
+
+    let guard = prepared_statement
+        .inner
+        .read()
+        .expect("poisoning impossible due to process-aborting panics");
 
     unsafe {
-        *out_num_fields = prepared_statement.inner.get_variable_col_specs().len();
+        *out_num_fields = guard.get_variable_col_specs().len();
     }
 
     FFIMaybeException::ok()
@@ -58,15 +65,16 @@ pub extern "C" fn prepared_statement_fill_column_specs_metadata(
     columns_ptr: ColumnsPtr,
     set_prepared_statement_variables_metadata: SetPreparedStatementVariablesMetadata,
 ) -> FFIMaybeException {
-    let prepared_statement = ArcFFI::as_ref(prepared_statement_ptr).unwrap();
+    let prepared_statement = ArcFFI::as_ref(prepared_statement_ptr)
+        .expect("valid and non-null BridgedPreparedStatement pointer");
+
+    let guard = prepared_statement
+        .inner
+        .read()
+        .expect("poisoning impossible due to process-aborting panics");
 
     // Iterate column specs and call the metadata setter
-    for (i, spec) in prepared_statement
-        .inner
-        .get_variable_col_specs()
-        .iter()
-        .enumerate()
-    {
+    for (i, spec) in guard.get_variable_col_specs().iter().enumerate() {
         let name = FFIStr::new(spec.name());
         let keyspace = FFIStr::new(spec.table_spec().ks_name());
         let table = FFIStr::new(spec.table_spec().table_name());
@@ -115,7 +123,12 @@ pub extern "C" fn prepared_statement_is_lwt(
     let prepared_statement = ArcFFI::as_ref(prepared_statement_ptr)
         .expect("valid and non-null BridgedPreparedStatement pointer");
 
-    let is_lwt_value = prepared_statement.inner.is_confirmed_lwt();
+    let guard = prepared_statement
+        .inner
+        .read()
+        .expect("poisoning impossible due to process-aborting panics");
+
+    let is_lwt_value = guard.is_confirmed_lwt();
 
     *is_lwt = is_lwt_value.into();
 

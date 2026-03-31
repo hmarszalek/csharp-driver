@@ -1,5 +1,6 @@
 use std::convert::Infallible;
 use std::sync::Arc;
+use std::sync::RwLock as StdRwLock;
 
 use scylla::client::session::Session;
 use scylla::cluster::ClusterState;
@@ -272,7 +273,9 @@ pub extern "C" fn session_prepare(
 
         tracing::trace!("[FFI] Statement prepared");
 
-        Ok(Arc::new(BridgedPreparedStatement { inner: ps }))
+        Ok(Arc::new(BridgedPreparedStatement {
+            inner: StdRwLock::new(ps),
+        }))
     })
 }
 
@@ -292,7 +295,11 @@ pub extern "C" fn session_query_bound(
     let session_guard_res = session_arc.try_read_owned();
 
     // Clone the prepared statement to move it into the async task.
-    let prepared_statement = bridged_prepared.inner.clone();
+    let prepared_statement = bridged_prepared
+        .inner
+        .read()
+        .expect("poisoning impossible due to process-aborting panics")
+        .clone();
 
     BridgedFuture::spawn::<_, _, MaybeShutdownError<PagerExecutionError>, _>(tcb, async move {
         tracing::debug!("[FFI] Executing prepared statement");
@@ -353,7 +360,11 @@ pub extern "C" fn session_query_bound_with_values(
     let session_guard_res = session_arc.try_read_owned();
 
     // Clone the prepared statement to move it into the async task.
-    let prepared_statement = bridged_prepared.inner.clone();
+    let prepared_statement = bridged_prepared
+        .inner
+        .read()
+        .expect("poisoning impossible due to process-aborting panics")
+        .clone();
 
     BridgedFuture::spawn::<_, _, MaybeShutdownError<PagerExecutionError>, _>(tcb, async move {
         tracing::debug!("[FFI] Executing prepared statement");

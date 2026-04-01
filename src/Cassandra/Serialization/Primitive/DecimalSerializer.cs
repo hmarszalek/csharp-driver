@@ -15,6 +15,7 @@
 //
 
 using System;
+using System.Buffers.Binary;
 using System.Numerics;
 
 namespace Cassandra.Serialization.Primitive
@@ -31,7 +32,7 @@ namespace Cassandra.Serialization.Primitive
 
         public override decimal Deserialize(ushort protocolVersion, byte[] buffer, int offset, int length, IColumnInfo typeInfo)
         {
-            var scale = BeConverter.ToInt32(buffer, offset);
+            var scale = BinaryPrimitives.ReadInt32BigEndian(buffer.AsSpan(offset));
             var unscaledBytes = Utils.SliceBuffer(buffer, offset + 4, length - 4);
             if (BitConverter.IsLittleEndian)
             {

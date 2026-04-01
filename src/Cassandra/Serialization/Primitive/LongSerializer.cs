@@ -14,6 +14,9 @@
 //   limitations under the License.
 //
 
+using System;
+using System.Buffers.Binary;
+
 namespace Cassandra.Serialization.Primitive
 {
     /// <summary>
@@ -28,7 +31,7 @@ namespace Cassandra.Serialization.Primitive
 
         public override long Deserialize(ushort protocolVersion, byte[] buffer, int offset, int length, IColumnInfo typeInfo)
         {
-            return BeConverter.ToInt64(buffer, offset);
+            return BinaryPrimitives.ReadInt64BigEndian(buffer.AsSpan(offset));
         }
 
         public override byte[] Serialize(ushort protocolVersion, long value)

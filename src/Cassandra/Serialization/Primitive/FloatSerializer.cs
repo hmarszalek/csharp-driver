@@ -14,6 +14,9 @@
 //   limitations under the License.
 //
 
+using System;
+using System.Buffers.Binary;
+
 namespace Cassandra.Serialization.Primitive
 {
     internal class FloatSerializer : TypeSerializer<float>
@@ -25,7 +28,7 @@ namespace Cassandra.Serialization.Primitive
 
         public override float Deserialize(ushort protocolVersion, byte[] buffer, int offset, int length, IColumnInfo typeInfo)
         {
-            return BeConverter.ToSingle(buffer, offset);
+            return BinaryPrimitives.ReadSingleBigEndian(buffer.AsSpan(offset));
         }
 
         public override byte[] Serialize(ushort protocolVersion, float value)

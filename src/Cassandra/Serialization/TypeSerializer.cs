@@ -15,6 +15,7 @@
 //
 
 using System;
+using System.Buffers.Binary;
 using System.Collections.Generic;
 using System.Net;
 using System.Numerics;
@@ -71,13 +72,13 @@ namespace Cassandra.Serialization
             if (!protocolVersion.Uses4BytesCollectionLength())
             {
                 //length is a short
-                result = BeConverter.ToInt16(buffer, index);
+                result = BinaryPrimitives.ReadInt16BigEndian(buffer.AsSpan(index));
                 index += 2;
             }
             else
             {
                 //length is expressed in int
-                result = BeConverter.ToInt32(buffer, index);
+                result = BinaryPrimitives.ReadInt32BigEndian(buffer.AsSpan(index));
                 index += 4;
             }
             return result;

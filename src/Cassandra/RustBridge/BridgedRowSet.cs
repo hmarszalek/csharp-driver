@@ -328,10 +328,8 @@ namespace Cassandra
                 {
                     CqlColumn column = columns[valueIndex];
 
-                    // TODO: reuse the frameSlice buffer.
-                    var frameSlice = FFIframeSlice.As<byte>().ToSpan().ToArray();
-                    int length = frameSlice.Length;
-                    values[valueIndex] = serializer.Deserialize(ProtocolVersion.V4, frameSlice.AsSpan(0, length), column.TypeCode, column.TypeInfo);
+                    ReadOnlySpan<byte> frameSlice = FFIframeSlice.As<byte>().ToSpan();
+                    values[valueIndex] = serializer.Deserialize(ProtocolVersion.V4, frameSlice, column.TypeCode, column.TypeInfo);
                 }
                 else
                 {

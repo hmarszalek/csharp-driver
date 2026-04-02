@@ -108,17 +108,6 @@ namespace Cassandra
 
         public bool IsLwt => _isLwt;
 
-        internal PreparedStatement(RowSetMetadata variablesMetadata, byte[] id, string cql,
-                                   string keyspace, ISerializerManager serializer, bool isLwt)
-        {
-            _variablesMetadata = variablesMetadata;
-            Id = id;
-            Cql = cql;
-            Keyspace = keyspace;
-            _serializerManager = serializer;
-            _isLwt = isLwt;
-        }
-
         // For use by the Rust interop code.
         internal PreparedStatement(RustBridge.ManuallyDestructible mdPreparedStatement, string cql)
         {

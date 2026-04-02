@@ -50,11 +50,6 @@ namespace Cassandra
         internal byte[] Id { get; private set; }
 
         /// <summary>
-        /// The keyspace were the prepared statement was first executed
-        /// </summary>
-        internal string Keyspace { get; private set; }
-
-        /// <summary>
         /// Gets the the incoming payload, that is, the payload that the server
         /// sent back with its prepared response, or null if the server did not include any custom payload.
         /// </summary>

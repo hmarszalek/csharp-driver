@@ -31,7 +31,6 @@ namespace Cassandra
         private BatchType _batchType = BatchType.Logged;
         private RoutingKey _routingKey;
         private object[] _routingValues;
-        private string _keyspace;
 
         /// <summary>
         /// Gets the batch type
@@ -93,24 +92,7 @@ namespace Cassandra
 
         public override string Keyspace
         {
-            get
-            {
-                if (_keyspace != null)
-                {
-                    return _keyspace;
-                }
-
-                var serializer = Serializer;
-                if (serializer == null)
-                {
-                    serializer = SerializerManager.Default.GetCurrentSerializer();
-                    BatchStatement.Logger.Warning(
-                        "Calculating keyspace key before executing is not supported for BatchStatement instances, " +
-                        "using default serializer.");
-                }
-
-                return GetRoutingStatement(serializer)?.Keyspace;
-            }
+            get => throw new NotImplementedException("Protocol version 4 does not support per-statement keyspace.");
         }
 
         private IStatement GetRoutingStatement(ISerializer serializer)
@@ -202,8 +184,7 @@ namespace Cassandra
         /// <param name="name">The keyspace name.</param>
         public BatchStatement SetKeyspace(string name)
         {
-            _keyspace = name;
-            return this;
+            throw new NotImplementedException("Protocol version 4 does not support per-statement keyspace.");
         }
 
         /// <summary>

@@ -30,7 +30,6 @@ namespace Cassandra
         private string _query;
         private volatile RoutingKey _routingKey;
         private object[] _routingValues;
-        private string _keyspace;
 
         /// <summary>
         ///  Gets the query string.
@@ -87,7 +86,7 @@ namespace Cassandra
         /// </remarks>
         public override string Keyspace
         {
-            get { return _keyspace; }
+            get => throw new NotImplementedException("Protocol version 4 does not support per-statement keyspace.");
         }
 
         /// <summary>
@@ -211,8 +210,7 @@ namespace Cassandra
         /// <param name="name">The keyspace name.</param>
         public SimpleStatement SetKeyspace(string name)
         {
-            _keyspace = name;
-            return this;
+            throw new NotImplementedException("Protocol version 4 does not support per-statement keyspace.");
         }
 
         internal override void SetValues(object[] values, ISerializer serializer)

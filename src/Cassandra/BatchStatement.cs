@@ -31,7 +31,6 @@ namespace Cassandra
         private BatchType _batchType = BatchType.Logged;
         private RoutingKey _routingKey;
         private object[] _routingValues;
-        private string _keyspace;
 
         /// <summary>
         /// Gets the batch type
@@ -91,26 +90,11 @@ namespace Cassandra
             }
         }
 
+        /// The current implementation supports protocol v4 exclusively. This protocol version does not support
+        /// per-statement keyspace, so this method will throw a <see cref="NotImplementedException"/> if called.
         public override string Keyspace
         {
-            get
-            {
-                if (_keyspace != null)
-                {
-                    return _keyspace;
-                }
-
-                var serializer = Serializer;
-                if (serializer == null)
-                {
-                    serializer = SerializerManager.Default.GetCurrentSerializer();
-                    BatchStatement.Logger.Warning(
-                        "Calculating keyspace key before executing is not supported for BatchStatement instances, " +
-                        "using default serializer.");
-                }
-
-                return GetRoutingStatement(serializer)?.Keyspace;
-            }
+            get => throw new NotImplementedException("Protocol version 4 does not support per-statement keyspace.");
         }
 
         private IStatement GetRoutingStatement(ISerializer serializer)
@@ -198,12 +182,13 @@ namespace Cassandra
         /// <summary>
         /// Sets the keyspace this batch operates on. The keyspace should only be set when the statements in this
         /// batch apply to a different keyspace to the logged keyspace of the <see cref="ISession"/>.
+        /// The current implementation supports protocol v4 exclusively. This protocol version does not support
+        /// per-statement keyspace, so this method will throw a <see cref="NotImplementedException"/> if called.
         /// </summary>
         /// <param name="name">The keyspace name.</param>
         public BatchStatement SetKeyspace(string name)
         {
-            _keyspace = name;
-            return this;
+            throw new NotImplementedException("Protocol version 4 does not support per-statement keyspace.");
         }
 
         /// <summary>

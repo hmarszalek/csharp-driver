@@ -63,13 +63,15 @@ namespace Cassandra
 
         /// <summary>
         /// Returns the keyspace this query operates on, based on the <see cref="PreparedStatement"/> metadata.
+        /// The current implementation supports protocol v4 exclusively. This protocol version does not support
+        /// per-statement keyspace, so this method will throw a <see cref="NotImplementedException"/> if called.
         /// <para>
         /// The keyspace returned is used as a hint for token-aware routing.
         /// </para>
         /// </summary>
         public override string Keyspace
         {
-            get { return _keyspace; }
+            get => throw new NotImplementedException("Protocol version 4 does not support per-statement keyspace.");
         }
 
         public override string TableName
@@ -99,7 +101,7 @@ namespace Cassandra
         {
             _preparedStatement = statement;
             _routingKey = statement.RoutingKey;
-            _keyspace = statement.Keyspace ?? statement.Variables?.Keyspace;
+            _keyspace = statement.Variables?.Keyspace;
             _table = statement.Variables?.Table;
 
             SetConsistencyLevel(statement.ConsistencyLevel);
@@ -161,7 +163,7 @@ namespace Cassandra
                 string failureMsg;
                 if (serializer.IsEncryptionEnabled)
                 {
-                    var tuple = serializer.IsAssignableFromEncrypted(p.Keyspace ?? Keyspace, p.Table, p.Name, p.TypeCode, p.TypeInfo, value, out failureMsg);
+                    var tuple = serializer.IsAssignableFromEncrypted(p.Keyspace, p.Table, p.Name, p.TypeCode, p.TypeInfo, value, out failureMsg);
                     assignable = tuple.Item1;
                 }
                 else
@@ -219,7 +221,7 @@ namespace Cassandra
                 for (var i = 0; i < routingIndexes.Length; i++)
                 {
                     var index = routingIndexes[i];
-                    byte[] key = serializer.SerializeAndEncrypt(PreparedStatement.Keyspace, parametersMetadata, index, valuesByPosition, index);
+                    byte[] key = serializer.SerializeAndEncrypt(_keyspace, parametersMetadata, index, valuesByPosition, index);
                     if (key == null)
                     {
                         //The partition key can not be null
@@ -269,7 +271,7 @@ namespace Cassandra
                         }
                         else
                         {
-                            key = serializer.SerializeAndEncrypt(PreparedStatement.Keyspace, parametersMetadata, colIndex, routingValues, i);
+                            key = serializer.SerializeAndEncrypt(_keyspace, parametersMetadata, colIndex, routingValues, i);
                         }
                     }
                     else

@@ -184,67 +184,6 @@ namespace Cassandra
         }
 
         /// <summary>
-        /// Determines whether the protocol supports partition key indexes in the `prepared` RESULT responses.
-        /// </summary>
-        /// <param name="version"></param>
-        /// <returns></returns>
-        public static bool SupportsPreparedPartitionKey(this ProtocolVersion version)
-        {
-            return version >= ProtocolVersion.V4;
-        }
-
-        /// <summary>
-        /// Determines whether the protocol supports up to 4 strings (ie: change_type, target, keyspace and table) in
-        /// the schema change responses.
-        /// </summary>
-        public static bool SupportsSchemaChangeFullMetadata(this ProtocolVersion version)
-        {
-            return version >= ProtocolVersion.V3;
-        }
-
-        /// <summary>
-        /// Determines whether the protocol supports timestamps parameters in BATCH, QUERY and EXECUTE requests.
-        /// </summary>
-        public static bool SupportsTimestamp(this ProtocolVersion version)
-        {
-            return version >= ProtocolVersion.V3;
-        }
-
-        /// <summary>
-        /// Determines whether the protocol supports flags in BATCH requests.
-        /// </summary>
-        public static bool SupportsBatchFlags(this ProtocolVersion version)
-        {
-            return version >= ProtocolVersion.V3;
-        }
-
-        /// <summary>
-        /// Determines whether the protocol supports named values in QUERY and EXECUTE requests.
-        /// </summary>
-        public static bool SupportsNamedValuesInQueries(this ProtocolVersion version)
-        {
-            return version >= ProtocolVersion.V3;
-        }
-
-        /// <summary>
-        /// Determines whether the protocol supports unset parameters.
-        /// </summary>
-        /// <param name="version"></param>
-        /// <returns></returns>
-        public static bool SupportsUnset(this ProtocolVersion version)
-        {
-            return version >= ProtocolVersion.V4;
-        }
-
-        /// <summary>
-        /// Determines whether the protocol supports BATCH requests.
-        /// </summary>
-        public static bool SupportsBatch(this ProtocolVersion version)
-        {
-            return version >= ProtocolVersion.V2;
-        }
-
-        /// <summary>
         /// Determines if the protocol supports result_metadata_id on PREPARED response and EXECUTE request.
         /// </summary>
         public static bool SupportsResultMetadataId(this ProtocolVersion version)
@@ -277,46 +216,11 @@ namespace Cassandra
         }
 
         /// <summary>
-        /// Determines if streamIds are serialized used 2 bytes
-        /// </summary>
-        public static bool Uses2BytesStreamIds(this ProtocolVersion version)
-        {
-            return version >= ProtocolVersion.V3;
-        }
-
-        /// <summary>
-        /// Determines whether the collection length is encoded using 32 bits.
-        /// </summary>
-        public static bool Uses4BytesCollectionLength(this ProtocolVersion version)
-        {
-            return version >= ProtocolVersion.V3;
-        }
-
-        /// <summary>
         /// Determines whether the QUERY, EXECUTE and BATCH flags are encoded using 32 bits.
         /// </summary>
         public static bool Uses4BytesQueryFlags(this ProtocolVersion version)
         {
             return version >= ProtocolVersion.V5;
-        }
-
-        /// <summary>
-        /// Startup responses using protocol v4+ can be a SERVER_ERROR wrapping a ProtocolException,
-        /// this method returns true when is possible to receive such error.
-        /// </summary>
-        public static bool CanStartupResponseErrorBeWrapped(this ProtocolVersion version)
-        {
-            return version >= ProtocolVersion.V4;
-        }
-
-        public static int GetHeaderSize(this ProtocolVersion version)
-        {
-            if (version.Uses2BytesStreamIds())
-            {
-                return 9;
-            }
-
-            return 8;
         }
 
         public static bool IsBeta(this ProtocolVersion version)

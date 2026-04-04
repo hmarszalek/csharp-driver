@@ -24,21 +24,6 @@ namespace Cassandra
     public enum ProtocolVersion : byte
     {
         /// <summary>
-        /// Cassandra protocol v1, supported in Apache Cassandra 1.2-->2.2.
-        /// </summary>
-        V1 = 0x01,
-
-        /// <summary>
-        /// Cassandra protocol v2, supported in Apache Cassandra 2.0-->2.2.
-        /// </summary>
-        V2 = 0x02,
-
-        /// <summary>
-        /// Cassandra protocol v3, supported in Apache Cassandra 2.1-->3.x.
-        /// </summary>
-        V3 = 0x03,
-
-        /// <summary>
         /// Cassandra protocol v4, supported in ScyllaDB (all versions) and Apache Cassandra (2.2-->3.x).
         /// </summary>
         V4 = 0x04,
@@ -50,7 +35,6 @@ namespace Cassandra
 
         /// <summary>
         /// The higher protocol version that is supported by this driver.
-        /// <para>When acquiring the first connection, it will use this version to start protocol negotiation.</para>
         /// </summary>
         MaxSupported = V4,
         /// <summary>

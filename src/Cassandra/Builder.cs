@@ -785,23 +785,13 @@ namespace Cassandra
         }
 
         /// <summary>
-        /// <para>Limits the maximum protocol version used to connect to the nodes</para>
+        /// <para>Limits the maximum protocol version used to connect to the nodes.</para>
         /// <para>
-        /// When it is not set, the protocol version used is negotiated between the driver and the Cassandra
-        /// cluster upon establishing the first connection.
-        /// </para>
-        /// <para>
-        /// Useful when connecting to a cluster that contains nodes with different major/minor versions
-        /// of Cassandra. For example, preparing for a rolling upgrade of the Cluster.
+        /// When it is not set, the driver uses protocol version 4.
         /// </para>
         /// </summary>
         /// <param name="version">
-        /// <para>The native protocol version.</para>
-        /// <para>Different Cassandra versions support a range of protocol versions, for example: </para>
-        /// <para>- Cassandra 2.0 (DSE 4.0 - 4.6): Supports protocol versions 1 and 2.</para>
-        /// <para>- Cassandra 2.1 (DSE 4.7 - 4.8): Supports protocol versions 1, 2 and 3.</para>
-        /// <para>- Cassandra 2.2: Supports protocol versions 1, 2, 3 and 4.</para>
-        /// <para>- Cassandra 3.0: Supports protocol versions 3 and 4.</para>
+        /// <para>The native protocol version. Currently only version 4 is supported.</para>
         /// </param>
         /// <remarks>Some Cassandra features are only available with a specific protocol version.</remarks>
         /// <returns>this instance</returns>
@@ -811,14 +801,9 @@ namespace Cassandra
         }
 
         /// <summary>
-        /// <para>Limits the maximum protocol version used to connect to the nodes</para>
+        /// <para>Limits the maximum protocol version used to connect to the nodes.</para>
         /// <para>
-        /// When it is not set, the protocol version used is negotiated between the driver and the Cassandra
-        /// cluster upon establishing the first connection.
-        /// </para>
-        /// <para>
-        /// Useful when connecting to a cluster that contains nodes with different major/minor versions
-        /// of Cassandra. For example, preparing for a rolling upgrade of the Cluster.
+        /// When it is not set, the driver uses protocol version 4.
         /// </para>
         /// </summary>
         /// <remarks>Some Cassandra features are only available with a specific protocol version.</remarks>

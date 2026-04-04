@@ -6,6 +6,58 @@ This guide helps you migrate from the DataStax C# Driver (or ScyllaDB's fork) to
 
 The C# RS Driver aims to maintain API compatibility with the existing drivers while providing improved performance and features through the underlying Rust driver. Most of your existing code should work with minimal changes.
 
+## (De)Serialization API
+
+### Deleted as no longer supported APIs
+
+#### `ITypeAdapter` interface
+
+```csharp
+// REMOVED
+public interface ITypeAdapter
+{
+    Type GetDataType();
+    object ConvertFrom(byte[] decimalBuf);
+    byte[] ConvertTo(object value);
+}
+```
+
+`ITypeAdapter` was the original (v1) extension point for plugging in custom encoding and decoding of CQL types that have no exact CLR equivalent — specifically `decimal` and `varint`. It was deprecated in 2016 when the `TypeSerializer<T>` API was introduced as a more capable replacement.
+
+**Migration Impact:** Implement `TypeSerializer<T>` instead. `TypeSerializer<T>` provides the same functionality with strongly-typed generics and direct access to the protocol version.
+
+#### `TypeAdapters` static class
+
+```csharp
+// REMOVED
+public static class TypeAdapters
+{
+    public static ITypeAdapter DecimalTypeAdapter;
+    public static ITypeAdapter VarIntTypeAdapter;
+    public static ITypeAdapter CustomTypeAdapter;
+}
+```
+
+`TypeAdapters` was the global registry where users could swap the default `ITypeAdapter` implementations for `decimal`, `varint`, and custom/dynamic-composite types. For example, `TypeAdapters.DecimalTypeAdapter = new MyDecimalAdapter();` would override how CQL `decimal` values are encoded/decoded.
+
+**Migration Impact:** Use `TypeSerializerDefinitions` to register custom `TypeSerializer<T>` implementations instead. Pass them via `Builder.WithTypeSerializers(new TypeSerializerDefinitions().Define(...))`.
+
+#### `DecimalTypeAdapter`, `BigIntegerTypeAdapter`, `DynamicCompositeTypeAdapter`, `NullTypeAdapter`
+
+```csharp
+// REMOVED
+public class DecimalTypeAdapter : ITypeAdapter { ... }
+public class BigIntegerTypeAdapter : ITypeAdapter { ... }
+public class DynamicCompositeTypeAdapter : ITypeAdapter { ... }
+public class NullTypeAdapter : ITypeAdapter { ... }
+```
+
+These were the concrete `ITypeAdapter` implementations shipped with the driver. `DecimalTypeAdapter` converted between CQL `decimal` and CLR `System.Decimal`. `BigIntegerTypeAdapter` converted between CQL `varint` and `System.Numerics.BigInteger`. `DynamicCompositeTypeAdapter` and `NullTypeAdapter` were pass-through adapters that returned raw `byte[]`.
+
+With `ITypeAdapter` removed, these classes are no longer needed. The built-in `TypeSerializer<T>` subclasses (`DecimalSerializer`, `VarIntSerializer`, etc.) handle the same conversions and have always been the active code path for default configurations.
+
+**Migration Impact:** No action required unless you were subclassing or referencing these types directly. The built-in serializers continue to handle `decimal` and `varint` automatically.
+
 ## Host API
 
 ### Deleted as no longer supported APIs

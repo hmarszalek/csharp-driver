@@ -29,11 +29,6 @@ namespace Cassandra
         public const int DefaultPort = 9042;
 
         /// <summary>
-        /// Maximum length of a frame according to the protocol
-        /// </summary>
-        internal const int MaximumFrameLength = 256 * 1024 * 1024;
-
-        /// <summary>
         /// The default value for <see cref="get_MaxSchemaAgreementWaitSeconds"/>: 10.
         /// </summary>
         public const int DefaultMaxSchemaAgreementWaitSeconds = 10;

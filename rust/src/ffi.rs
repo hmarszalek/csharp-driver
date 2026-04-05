@@ -45,7 +45,7 @@ impl<O: Ownership> Properties for O {
     type Ownership = O;
 }
 
-/// Represents a valid non-dangling pointer.
+/// Represents a valid non-dangling pointer to Rust-allocated data.
 ///
 /// ## Safety and validity guarantees
 /// Apart from trivial constructors such as [`BridgedPtr::null()`] and [`BridgedPtr::null_mut()`], there
@@ -774,6 +774,7 @@ impl From<FFIBool> for bool {
 const _: [(); std::mem::size_of::<FFIBool>()] = [(); std::mem::size_of::<u8>()];
 const _: [(); std::mem::align_of::<FFIBool>()] = [(); std::mem::align_of::<u8>()];
 
+/// Represents a non-null pointer to C#-allocated data.
 #[repr(transparent)]
 pub struct FFIPtr<'a, T: Sized> {
     ptr: Option<NonNull<T>>,

@@ -776,9 +776,36 @@ const _: [(); std::mem::align_of::<FFIBool>()] = [(); std::mem::align_of::<u8>()
 
 /// Represents a non-null pointer to C#-allocated data.
 #[repr(transparent)]
-pub struct FFIPtr<'a, T: Sized> {
-    ptr: Option<NonNull<T>>,
+pub struct FFINonNullPtr<'a, T: Sized> {
+    ptr: NonNull<T>,
     _phantom: PhantomData<&'a ()>,
+}
+
+// Manual implementation to avoid `T: Clone` bound.
+impl<T> Clone for FFINonNullPtr<'_, T> {
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+
+// Manual implementation to avoid `T: Copy` bound.
+impl<T> Copy for FFINonNullPtr<'_, T> {}
+
+impl<'a, T> Debug for FFINonNullPtr<'a, T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "FFINonNullPtr({:p})", self.ptr)
+    }
+}
+
+// Compile-time assertion that `FFINonNullPtr` is pointer-sized.
+// Ensures ABI compatibility with C# (opaque GCHandle/IntPtr across FFI).
+const _: [(); std::mem::size_of::<FFINonNullPtr<'_, ()>>()] =
+    [(); std::mem::size_of::<*const ()>()];
+
+/// Represents a nullable pointer to C#-allocated data.
+#[repr(transparent)]
+pub struct FFIPtr<'a, T: Sized> {
+    ptr: Option<FFINonNullPtr<'a, T>>,
 }
 
 // Manual implementation to avoid `T: Clone` bound.
@@ -795,7 +822,7 @@ impl<'a, T> Debug for FFIPtr<'a, T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let ptr = self
             .ptr
-            .map(|nn| nn.as_ptr())
+            .map(|nn| nn.ptr.as_ptr())
             .unwrap_or(std::ptr::null::<T>() as *mut T);
         write!(f, "FFIPtr({:p})", ptr)
     }
@@ -808,7 +835,8 @@ const _: [(); std::mem::size_of::<FFIPtr<'_, ()>>()] = [(); std::mem::size_of::<
 pub(crate) type CSharpStr<'a> = FFIPtr<'a, c_char>;
 impl<'a> CSharpStr<'a> {
     pub(crate) fn as_cstr(&self) -> Option<&'a CStr> {
-        self.ptr.map(|ptr| unsafe { CStr::from_ptr(ptr.as_ptr()) })
+        self.ptr
+            .map(|nn| unsafe { CStr::from_ptr(nn.ptr.as_ptr()) })
     }
 }
 

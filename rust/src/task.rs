@@ -2,6 +2,7 @@ use futures::FutureExt;
 use std::ffi::c_void;
 use std::fmt::Debug;
 use std::future::Future;
+use std::marker::PhantomData;
 use std::panic::AssertUnwindSafe;
 use std::sync::{Arc, LazyLock};
 use tokio::runtime::Runtime;
@@ -35,14 +36,19 @@ pub extern "C" fn init_rust_logging() {
     crate::logging::init_logging();
 }
 
+enum TcsInner {}
+
 /// Opaque type representing a C# TaskCompletionSource<T>.
-enum Tcs {}
+struct Tcs<T> {
+    _tcs: TcsInner,
+    _phantom: PhantomData<T>,
+}
 
 /// A pointer to a TaskCompletionSource<T> on the C# side.
 #[repr(transparent)]
-pub struct TcsPtr(FFIPtr<'static, Tcs>);
+pub struct TcsPtr<T>(FFIPtr<'static, Tcs<T>>);
 
-unsafe impl Send for TcsPtr {}
+unsafe impl<T> Send for TcsPtr<T> {}
 
 /// A struct representing a manually destructible resource passed across the FFI boundary.
 /// It contains a pointer to the resource and a function pointer to its destructor.
@@ -140,11 +146,11 @@ impl<T: Destructible> From<Option<Arc<T>>> for ManuallyDestructible {
 /// or fail (set an exception) the task.
 #[repr(C)] // <- Ensure FFI-compatible layout
 pub struct Tcb<R> {
-    tcs: TcsPtr,
+    tcs: TcsPtr<R>,
     /// Function pointer type to complete a TaskCompletionSource with a result.
-    complete_task: unsafe extern "C" fn(tcs: TcsPtr, result: R),
+    complete_task: unsafe extern "C" fn(tcs: TcsPtr<R>, result: R),
     /// Function pointer type to fail a TaskCompletionSource with an exception handle.
-    fail_task: unsafe extern "C" fn(tcs: TcsPtr, exception_handle: ExceptionPtr),
+    fail_task: unsafe extern "C" fn(tcs: TcsPtr<R>, exception_handle: ExceptionPtr),
     /// Pointer to the collection of exception constructors.
     // SAFETY: The memory is a leaked unmanaged allocation on the C# side.
     // This guarantees that the pointer remains valid and is not moved or deallocated.

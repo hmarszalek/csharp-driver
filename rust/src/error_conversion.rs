@@ -13,7 +13,6 @@ use thiserror::Error;
 use crate::task::ExceptionConstructors;
 
 // Opaque type representing a C# Exception.
-#[derive(Clone, Copy)]
 enum Exception {}
 
 /// A pointer to a C# Exception.

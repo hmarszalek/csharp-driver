@@ -18,35 +18,6 @@ impl FFI for BridgedPreparedStatement {
     type Origin = FromArc;
 }
 
-#[unsafe(no_mangle)]
-pub extern "C" fn prepared_statement_is_lwt(
-    prepared_statement_ptr: BridgedBorrowedSharedPtr<'_, BridgedPreparedStatement>,
-    is_lwt: *mut FFIBool,
-    constructors: &'static ExceptionConstructors,
-) -> FFIMaybeException {
-    let prepared_statement = ArcFFI::as_ref(prepared_statement_ptr)
-        .expect("valid and non-null BridgedPreparedStatement pointer");
-
-    let guard =
-        match prepared_statement.inner.read() {
-            Ok(guard) => guard,
-            Err(err) => {
-                let ex = constructors.rust_exception_constructor.construct_from_rust(&format!(
-                "BridgedPreparedStatement encountered lock error while reading is_lwt: {err}"
-            ));
-                return FFIMaybeException::from_exception(ex);
-            }
-        };
-
-    let is_lwt_value = guard.is_confirmed_lwt();
-
-    unsafe {
-        *is_lwt = is_lwt_value.into();
-    }
-
-    FFIMaybeException::ok()
-}
-
 /// Gets the number of variable column specifications in the prepared statement.
 #[unsafe(no_mangle)]
 pub extern "C" fn prepared_statement_get_variables_column_specs_count(
@@ -181,4 +152,33 @@ pub extern "C" fn prepared_statement_fill_column_specs_metadata(
                 .map(|pk_indexes| pk_indexes.index),
         )
     }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn prepared_statement_is_lwt(
+    prepared_statement_ptr: BridgedBorrowedSharedPtr<'_, BridgedPreparedStatement>,
+    is_lwt: *mut FFIBool,
+    constructors: &'static ExceptionConstructors,
+) -> FFIMaybeException {
+    let prepared_statement = ArcFFI::as_ref(prepared_statement_ptr)
+        .expect("valid and non-null BridgedPreparedStatement pointer");
+
+    let guard =
+        match prepared_statement.inner.read() {
+            Ok(guard) => guard,
+            Err(err) => {
+                let ex = constructors.rust_exception_constructor.construct_from_rust(format!(
+                "BridgedPreparedStatement encountered lock error while reading is_lwt: {err}"
+            ));
+                return FFIMaybeException::from_exception(ex);
+            }
+        };
+
+    let is_lwt_value = guard.is_confirmed_lwt();
+
+    unsafe {
+        *is_lwt = is_lwt_value.into();
+    }
+
+    FFIMaybeException::ok()
 }

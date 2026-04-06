@@ -107,10 +107,9 @@ namespace Cassandra
         internal PreparedStatement(RustBridge.ManuallyDestructible mdPreparedStatement, string cql)
         {
             bridgedPreparedStatement = new BridgedPreparedStatement(mdPreparedStatement);
-            bool isLwt = bridgedPreparedStatement.IsLwt();
             _variablesMetadata = bridgedPreparedStatement.ExtractVariablesMetadataFromRust();
             Cql = cql;
-            _isLwt = isLwt;
+            _isLwt = bridgedPreparedStatement.IsLwt();
 
             // If the partition keys were parsed, set the routing indexes to them by default.
             if (_variablesMetadata.PartitionKeys != null)

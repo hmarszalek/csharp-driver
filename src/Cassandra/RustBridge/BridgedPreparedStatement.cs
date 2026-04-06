@@ -17,16 +17,6 @@ namespace Cassandra
         {
         }
 
-        internal bool IsLwt()
-        {
-            FFIBool isLwt = false;
-            unsafe
-            {
-                RunWithIncrement(handle => prepared_statement_is_lwt(handle, out isLwt, (IntPtr)Globals.ConstructorsPtr));
-            }
-            return isLwt;
-        }
-
         internal RowSetMetadata ExtractVariablesMetadataFromRust()
         {
             // Query Rust for the number of variable column specs
@@ -61,14 +51,24 @@ namespace Cassandra
             return metadata;
         }
 
-        [DllImport("csharp_wrapper", CallingConvention = CallingConvention.Cdecl)]
-        unsafe private static extern FFIMaybeException prepared_statement_is_lwt(IntPtr prepared_statement, out FFIBool isLwt, IntPtr constructors);
+        internal bool IsLwt()
+        {
+            FFIBool isLwt = false;
+            unsafe
+            {
+                RunWithIncrement(handle => prepared_statement_is_lwt(handle, out isLwt, (IntPtr)Globals.ConstructorsPtr));
+            }
+            return isLwt;
+        }
 
         [DllImport("csharp_wrapper", CallingConvention = CallingConvention.Cdecl)]
         unsafe private static extern FFIMaybeException prepared_statement_get_variables_column_specs_count(IntPtr prepared_statement, out nuint count, IntPtr constructors);
 
         [DllImport("csharp_wrapper", CallingConvention = CallingConvention.Cdecl)]
         unsafe private static extern FFIMaybeException prepared_statement_fill_column_specs_metadata(IntPtr prepared_statement, IntPtr columnsPtr, IntPtr metadataSetter, IntPtr pkIndexesPtr, IntPtr addPkIndex, IntPtr constructors);
+
+        [DllImport("csharp_wrapper", CallingConvention = CallingConvention.Cdecl)]
+        unsafe private static extern FFIMaybeException prepared_statement_is_lwt(IntPtr prepared_statement, out FFIBool isLwt, IntPtr constructors);
 
         private static readonly unsafe delegate* unmanaged[Cdecl]<IntPtr, ushort, FFIMaybeException> AddPkIndexPtr = &AddPkIndex;
         [UnmanagedCallersOnly(CallConvs = new Type[] { typeof(CallConvCdecl) })]

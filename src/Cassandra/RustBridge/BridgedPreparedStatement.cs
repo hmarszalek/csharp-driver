@@ -40,8 +40,13 @@ namespace Cassandra
 
             unsafe
             {
-                void* columnsPtr = Unsafe.AsPointer(ref columns);
-                FillVariablesMetadata((IntPtr)columnsPtr, (IntPtr)setColumnMetaPtr);
+                RunWithIncrement(handle =>
+                    prepared_statement_fill_column_specs_metadata(
+                        handle,
+                        (IntPtr)Unsafe.AsPointer(ref columns),
+                        (IntPtr)setColumnMetaPtr
+                    )
+                );
             }
 
             var metadata = new RowSetMetadata
@@ -66,11 +71,6 @@ namespace Cassandra
             nuint count = 0;
             RunWithIncrement(handle => prepared_statement_get_variables_column_specs_count(handle, out count));
             return count;
-        }
-
-        private void FillVariablesMetadata(IntPtr columnsPtr, IntPtr metadataSetter)
-        {
-            RunWithIncrement(handle => prepared_statement_fill_column_specs_metadata(handle, columnsPtr, metadataSetter));
         }
 
         unsafe static readonly delegate* unmanaged[Cdecl]<IntPtr, nuint, FFIString, FFIString, FFIString, byte, IntPtr, byte, FFIMaybeException> setColumnMetaPtr = &BridgedRowSet.SetColumnMeta;

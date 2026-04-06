@@ -111,6 +111,12 @@ namespace Cassandra
             _variablesMetadata = bridgedPreparedStatement.ExtractVariablesMetadataFromRust();
             Cql = cql;
             _isLwt = isLwt;
+
+            // If the partition keys were parsed, set the routing indexes to them by default.
+            if (_variablesMetadata.PartitionKeys != null)
+            {
+                _routingIndexes = _variablesMetadata.PartitionKeys;
+            }
         }
 
         /// <summary>

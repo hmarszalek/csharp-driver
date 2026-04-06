@@ -3,6 +3,7 @@ using System;
 using System.Runtime.InteropServices;
 using System.Runtime.CompilerServices;
 using static Cassandra.RustBridge;
+using System.Collections.Generic;
 
 namespace Cassandra
 {
@@ -41,6 +42,7 @@ namespace Cassandra
                 columns[i] = new CqlColumn();
             }
 
+            var pk_indexes = new List<int>();
             unsafe
             {
                 RunWithIncrement(handle =>
@@ -48,13 +50,14 @@ namespace Cassandra
                         handle,
                         (IntPtr)Unsafe.AsPointer(ref columns),
                         (IntPtr)setColumnMetaPtr,
+                        (IntPtr)Unsafe.AsPointer(ref pk_indexes),
+                        (IntPtr)AddPkIndexPtr,
                         (IntPtr)Globals.ConstructorsPtr
                     )
                 );
             }
 
-            var metadata = new RowSetMetadata(columns);
-
+            var metadata = new RowSetMetadata(columns, pk_indexes.ToArray());
             return metadata;
         }
 
@@ -65,7 +68,26 @@ namespace Cassandra
         unsafe private static extern FFIMaybeException prepared_statement_get_variables_column_specs_count(IntPtr prepared_statement, out nuint count, IntPtr constructors);
 
         [DllImport("csharp_wrapper", CallingConvention = CallingConvention.Cdecl)]
-        unsafe private static extern FFIMaybeException prepared_statement_fill_column_specs_metadata(IntPtr prepared_statement, IntPtr columnsPtr, IntPtr metadataSetter, IntPtr constructors);
+        unsafe private static extern FFIMaybeException prepared_statement_fill_column_specs_metadata(IntPtr prepared_statement, IntPtr columnsPtr, IntPtr metadataSetter, IntPtr pkIndexesPtr, IntPtr addPkIndex, IntPtr constructors);
+
+        private static readonly unsafe delegate* unmanaged[Cdecl]<IntPtr, ushort, FFIMaybeException> AddPkIndexPtr = &AddPkIndex;
+        [UnmanagedCallersOnly(CallConvs = new Type[] { typeof(CallConvCdecl) })]
+        private static unsafe FFIMaybeException AddPkIndex(
+            IntPtr pkIndexesListPtr,
+            ushort pkIndex)
+        {
+            try
+            {
+                var pkIndexesList = Unsafe.AsRef<List<int>>((void*)pkIndexesListPtr);
+                pkIndexesList.Add(pkIndex);
+            }
+            catch (Exception ex)
+            {
+                return FFIMaybeException.FromException(ex);
+            }
+
+            return FFIMaybeException.Ok();
+        }
 
         private nuint GetVariablesColumnSpecsCount()
         {

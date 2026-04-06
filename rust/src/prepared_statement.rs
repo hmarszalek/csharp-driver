@@ -1,5 +1,8 @@
 use crate::error_conversion::FFIMaybeException;
-use crate::ffi::{ArcFFI, BridgedBorrowedSharedPtr, FFI, FFIBool, FFIPtr, FFIStr, FromArc, RefFFI};
+use crate::ffi::{
+    ArcFFI, BridgedBorrowedSharedPtr, FFI, FFIBool, FFIPtr, FFIStr, FromArc, RefFFI,
+    ffi_callback_for_each,
+};
 use crate::row_set::column_type_to_code;
 use scylla::frame::response::result::ColumnType;
 use scylla::statement::prepared::PreparedStatement;
@@ -54,6 +57,17 @@ type SetPreparedStatementVariablesMetadata = unsafe extern "C" fn(
     is_frozen: u8,
 ) -> FFIMaybeException;
 
+enum PartitionKeyIndexesList {}
+
+#[derive(Clone, Copy)]
+#[repr(transparent)]
+pub struct PartitionKeyIndexesListPtr<'a>(FFIPtr<'a, PartitionKeyIndexesList>);
+
+type AddPartitionKeyIndex = unsafe extern "C" fn(
+    pk_indexes_list_ptr: PartitionKeyIndexesListPtr<'_>,
+    index: u16,
+) -> FFIMaybeException;
+
 /// Calls back into C# for each column to provide column specs metadata.
 /// `metadata_setter` is a function pointer supplied by C# - it will be called synchronously for each column.
 /// SAFETY: This function assumes that `columns_ptr` is a valid pointer
@@ -64,6 +78,8 @@ pub extern "C" fn prepared_statement_fill_column_specs_metadata(
     prepared_statement_ptr: BridgedBorrowedSharedPtr<'_, BridgedPreparedStatement>,
     columns_ptr: ColumnsPtr<'_>,
     set_prepared_statement_variables_metadata: SetPreparedStatementVariablesMetadata,
+    pk_indexes_list_ptr: PartitionKeyIndexesListPtr<'_>,
+    add_pk_index: AddPartitionKeyIndex,
 ) -> FFIMaybeException {
     let prepared_statement = ArcFFI::as_ref(prepared_statement_ptr)
         .expect("valid and non-null BridgedPreparedStatement pointer");
@@ -112,7 +128,17 @@ pub extern "C" fn prepared_statement_fill_column_specs_metadata(
             }
         }
     }
-    FFIMaybeException::ok()
+
+    unsafe {
+        ffi_callback_for_each(
+            pk_indexes_list_ptr,
+            add_pk_index,
+            guard
+                .get_variable_pk_indexes()
+                .iter()
+                .map(|pk_indexes| pk_indexes.index),
+        )
+    }
 }
 
 #[unsafe(no_mangle)]

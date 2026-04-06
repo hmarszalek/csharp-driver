@@ -111,6 +111,18 @@ namespace Cassandra
             Cql = cql;
             _isLwt = bridgedPreparedStatement.IsLwt();
             _serializerManager = serializerManager;
+
+            // If the partition keys were parsed, set the routing indexes to them by default.
+            if (_variablesMetadata.PartitionKeys != null)
+            {
+                if (_variablesMetadata.PartitionKeys.Length == 0)
+                {
+                    // zero-length partition keys means that none of the parameters are partition keys
+                    // the partition key is hard-coded.
+                    return;
+                }
+                _routingIndexes = _variablesMetadata.PartitionKeys;
+            }
         }
 
         /// <summary>

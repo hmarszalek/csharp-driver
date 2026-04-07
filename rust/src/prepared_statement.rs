@@ -4,6 +4,7 @@ use crate::ffi::{
     ffi_callback_for_each,
 };
 use crate::row_set::column_type_to_code;
+use crate::task::ExceptionConstructors;
 use scylla::frame::response::result::ColumnType;
 use scylla::statement::prepared::PreparedStatement;
 use std::sync::RwLock;
@@ -157,6 +158,61 @@ pub extern "C" fn prepared_statement_is_lwt(
     let is_lwt_value = guard.is_confirmed_lwt();
 
     *is_lwt = is_lwt_value.into();
+
+    FFIMaybeException::ok()
+}
+
+/// Gets consistency level of the prepared statement.
+#[unsafe(no_mangle)]
+pub extern "C" fn prepared_statement_get_consistency_level(
+    prepared_statement_ptr: BridgedBorrowedSharedPtr<'_, BridgedPreparedStatement>,
+    consistency_level: Option<&mut i32>,
+) -> FFIMaybeException {
+    let prepared_statement = ArcFFI::as_ref(prepared_statement_ptr)
+        .expect("valid and non-null BridgedPreparedStatement pointer");
+
+    let guard = prepared_statement
+        .inner
+        .read()
+        .expect("poisoning impossible due to process-aborting panics");
+
+    let maybe_consistency = guard.get_consistency();
+
+    if let (Some(cl), Some(consistency_level)) = (maybe_consistency, consistency_level) {
+        *consistency_level = cl as i32;
+    }
+    FFIMaybeException::ok()
+}
+
+/// Sets consistency level of the prepared statement.
+#[unsafe(no_mangle)]
+pub extern "C" fn prepared_statement_set_consistency_level(
+    prepared_statement_ptr: BridgedBorrowedSharedPtr<'_, BridgedPreparedStatement>,
+    consistency_level: u16,
+    constructors: &'static ExceptionConstructors,
+) -> FFIMaybeException {
+    let prepared_statement = ArcFFI::as_ref(prepared_statement_ptr)
+        .expect("valid and non-null BridgedPreparedStatement pointer");
+
+    let mut guard = prepared_statement
+        .inner
+        .write()
+        .expect("poisoning impossible due to process-aborting panics");
+
+    let Ok(cl) = consistency_level.try_into() else {
+        let ex = constructors
+            .invalid_argument_exception_constructor
+            .construct_from_rust(
+                format!(
+                    "Invalid consistency level value {0} passed from C#.",
+                    consistency_level
+                )
+                .as_str(),
+            );
+        return FFIMaybeException::from_exception(ex);
+    };
+
+    guard.set_consistency(cl);
 
     FFIMaybeException::ok()
 }

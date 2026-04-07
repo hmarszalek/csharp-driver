@@ -88,7 +88,10 @@ namespace Cassandra
         /// <summary>
         /// Gets the default consistency level for all executions using this instance
         /// </summary>
-        public ConsistencyLevel? ConsistencyLevel { get; private set; }
+        public ConsistencyLevel? ConsistencyLevel
+        {
+            get => bridgedPreparedStatement.GetConsistencyLevel();
+        }
 
         /// <summary>
         /// Determines if the query is idempotent, i.e. whether it can be applied multiple times without 
@@ -186,7 +189,7 @@ namespace Cassandra
         /// <returns>this <c>PreparedStatement</c> object.</returns>
         public PreparedStatement SetConsistencyLevel(ConsistencyLevel consistency)
         {
-            ConsistencyLevel = consistency;
+            bridgedPreparedStatement.SetConsistencyLevel(consistency);
             return this;
         }
 

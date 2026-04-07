@@ -60,6 +60,38 @@ namespace Cassandra
             return isLwt;
         }
 
+        internal ConsistencyLevel? GetConsistencyLevel()
+        {
+            int clInt = -1;
+            unsafe
+            {
+                RunWithIncrement(handle => prepared_statement_get_consistency_level(
+                    handle,
+                    out clInt));
+            }
+
+            if (clInt < 0)
+            {
+                return null;
+            }
+
+            return (ConsistencyLevel)clInt;
+        }
+
+        internal void SetConsistencyLevel(ConsistencyLevel consistencyLevel)
+        {
+            unsafe
+            {
+                RunWithIncrement(handle =>
+                    prepared_statement_set_consistency_level(
+                        handle,
+                        (ushort)consistencyLevel,
+                        (IntPtr)Globals.ConstructorsPtr)
+                    );
+            }
+        }
+
+
         [DllImport("csharp_wrapper", CallingConvention = CallingConvention.Cdecl)]
         unsafe private static extern FFIMaybeException prepared_statement_get_variables_column_specs_count(IntPtr prepared_statement, out nuint count);
 
@@ -68,6 +100,12 @@ namespace Cassandra
 
         [DllImport("csharp_wrapper", CallingConvention = CallingConvention.Cdecl)]
         unsafe private static extern FFIMaybeException prepared_statement_is_lwt(IntPtr prepared_statement, out FFIBool isLwt);
+
+        [DllImport("csharp_wrapper", CallingConvention = CallingConvention.Cdecl)]
+        unsafe private static extern FFIMaybeException prepared_statement_get_consistency_level(IntPtr prepared_statement, out int consistency_level);
+
+        [DllImport("csharp_wrapper", CallingConvention = CallingConvention.Cdecl)]
+        unsafe private static extern FFIMaybeException prepared_statement_set_consistency_level(IntPtr prepared_statement, ushort consistency_level, IntPtr constructors);
 
         private static readonly unsafe delegate* unmanaged[Cdecl]<IntPtr, ushort, FFIMaybeException> AddPkIndexPtr = &AddPkIndex;
         [UnmanagedCallersOnly(CallConvs = new Type[] { typeof(CallConvCdecl) })]

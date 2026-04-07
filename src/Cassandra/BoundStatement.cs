@@ -109,10 +109,7 @@ namespace Cassandra
             _table = statement.Variables?.Table;
 
             SetConsistencyLevel(statement.ConsistencyLevel);
-            if (statement.IsIdempotent != null)
-            {
-                SetIdempotence(statement.IsIdempotent.Value);
-            }
+            SetIdempotence(statement.IsIdempotent);
         }
 
         /// <summary>

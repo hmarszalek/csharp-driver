@@ -244,3 +244,55 @@ pub extern "C" fn prepared_statement_set_consistency_level(
 
     FFIMaybeException::ok()
 }
+
+/// Gets whether the prepared statement is idempotent.
+#[unsafe(no_mangle)]
+pub extern "C" fn prepared_statement_get_is_idempotent(
+    prepared_statement_ptr: BridgedBorrowedSharedPtr<'_, BridgedPreparedStatement>,
+    is_idempotent: *mut FFIBool,
+    constructors: &'static ExceptionConstructors,
+) -> FFIMaybeException {
+    let prepared_statement = ArcFFI::as_ref(prepared_statement_ptr)
+        .expect("valid and non-null BridgedPreparedStatement pointer");
+
+    let guard = match prepared_statement.inner.read() {
+        Ok(guard) => guard,
+        Err(err) => {
+            let ex = constructors.rust_exception_constructor.construct_from_rust(format!(
+                "BridgedPreparedStatement encountered lock error while reading idempotence: {err}"
+            ));
+            return FFIMaybeException::from_exception(ex);
+        }
+    };
+    let is_idempotent_value = guard.get_is_idempotent();
+
+    unsafe {
+        *is_idempotent = is_idempotent_value.into();
+    }
+
+    FFIMaybeException::ok()
+}
+
+/// Sets whether the prepared statement is idempotent.
+#[unsafe(no_mangle)]
+pub extern "C" fn prepared_statement_set_is_idempotent(
+    prepared_statement_ptr: BridgedBorrowedSharedPtr<'_, BridgedPreparedStatement>,
+    is_idempotent: FFIBool,
+    constructors: &'static ExceptionConstructors,
+) -> FFIMaybeException {
+    let prepared_statement = ArcFFI::as_ref(prepared_statement_ptr)
+        .expect("valid and non-null BridgedPreparedStatement pointer");
+
+    let mut guard = match prepared_statement.inner.write() {
+        Ok(guard) => guard,
+        Err(err) => {
+            let ex = constructors.rust_exception_constructor.construct_from_rust(format!(
+                "BridgedPreparedStatement encountered lock error while setting idempotence: {err}"
+            ));
+            return FFIMaybeException::from_exception(ex);
+        }
+    };
+    guard.set_is_idempotent(is_idempotent.into());
+
+    FFIMaybeException::ok()
+}

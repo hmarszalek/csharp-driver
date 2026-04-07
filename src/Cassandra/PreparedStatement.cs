@@ -102,7 +102,10 @@ namespace Cassandra
         /// </para>
         /// When the property is null, the driver will use the default value from the <see cref="QueryOptions.GetDefaultIdempotence()"/>.
         /// </summary>
-        public bool? IsIdempotent { get; private set; }
+        public bool IsIdempotent
+        {
+            get => bridgedPreparedStatement.IsIdempotent();
+        }
 
         public bool IsLwt => _isLwt;
 
@@ -115,6 +118,7 @@ namespace Cassandra
             _isLwt = bridgedPreparedStatement.IsLwt();
 
             SetConsistencyLevel(queryOptions.GetConsistencyLevel());
+            SetIdempotence(queryOptions.GetDefaultIdempotence());
 
             // If the partition keys were parsed, set the routing indexes to them by default.
             if (_variablesMetadata.PartitionKeys != null)
@@ -266,7 +270,7 @@ namespace Cassandra
         /// </summary>
         public PreparedStatement SetIdempotence(bool value)
         {
-            IsIdempotent = value;
+            bridgedPreparedStatement.SetIsIdempotent(value);
             return this;
         }
 

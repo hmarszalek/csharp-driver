@@ -317,7 +317,7 @@ namespace Cassandra
         internal readonly struct Tcb<R> where R : IBridgedTaskResult
         {
             /// <summary>
-            ///  Pointer to a GCHandle referencing a TaskCompletionSource&lt;IntPtr&gt;.
+            ///  A (pointer to) GCHandle referencing a TaskCompletionSource&lt;R&gt;.
             ///  This shall be allocated by the C# code before calling into Rust,
             ///  and freed by the C# callback executed by the Rust code once the operation
             ///  is completed (either successfully or with an error).
@@ -397,22 +397,30 @@ namespace Cassandra
                     // Recover the GCHandle that was allocated for the TaskCompletionSource.
                     var handle = GCHandle.FromIntPtr(tcsPtr);
 
-                    if (handle.Target is TaskCompletionSource<R> tcs)
+                    try
                     {
-                        // Pass R value back as the result.
-                        // The Rust code is responsible for interpreting the pointer's contents
-                        // memory is freed when the C# RustResource releases it.
-                        tcs.SetResult(result);
+                        if (handle.Target is TaskCompletionSource<R> tcs)
+                        {
+                            // Pass R value back as the result.
+                            // The Rust code is responsible for interpreting the pointer's contents
+                            // memory is freed when the C# RustResource releases it.
+                            tcs.SetResult(result);
 
-                        // Free the handle so the TCS can be collected once no longer used
-                        // by the C# code.
-                        handle.Free();
-
-                        Console.Error.WriteLine($"[FFI] CompleteTask done.");
+                            Console.Error.WriteLine($"[FFI] CompleteTask done.");
+                        }
+                        else
+                        {
+                            throw new InvalidOperationException($"GCHandle did not reference a TaskCompletionSource<{typeof(R)}>.");
+                        }
                     }
-                    else
+                    finally
                     {
-                        throw new InvalidOperationException($"GCHandle did not reference a TaskCompletionSource<{typeof(R)}>.");
+                        if (handle.IsAllocated)
+                        {
+                            // Free the handle so the TCS can be collected once no longer used
+                            // by the C# code.
+                            handle.Free();
+                        }
                     }
                 }
                 catch (Exception ex)
@@ -436,12 +444,13 @@ namespace Cassandra
                     // Recover the GCHandle that was allocated for the TaskCompletionSource.
                     var handle = GCHandle.FromIntPtr(tcsPtr);
 
-                    if (handle.Target is TaskCompletionSource<R> tcsMd)
+                    try
                     {
-                        // Create the exception to pass to the TCS.
-                        Exception exception;
-                        try
+
+                        if (handle.Target is TaskCompletionSource<R> tcsMd)
                         {
+                            // Create the exception to pass to the TCS.
+                            Exception exception;
                             if (exceptionPtr.exception != IntPtr.Zero)
                             {
                                 // Recover the exception from the GCHandle passed from Rust.
@@ -473,23 +482,22 @@ namespace Cassandra
                                 exception = new RustException("Unknown error from Rust");
                             }
                             tcsMd.SetException(exception);
+                            Console.Error.WriteLine($"[FFI] FailTask done.");
+
                         }
-                        finally
+                        else
                         {
-                            // Free the handle so the TCS can be collected once no longer used
-                            // by the C# code.
-                            if (handle.IsAllocated)
-                            {
-                                handle.Free();
-                            }
+                            throw new InvalidOperationException($"GCHandle did not reference a TaskCompletionSource<{typeof(R)}>.");
                         }
-
-                        Console.Error.WriteLine($"[FFI] FailTask done.");
-
                     }
-                    else
+                    finally
                     {
-                        throw new InvalidOperationException($"GCHandle did not reference a TaskCompletionSource<{typeof(R)}>.");
+                        // Free the handle so the TCS can be collected once no longer used
+                        // by the C# code.
+                        if (handle.IsAllocated)
+                        {
+                            handle.Free();
+                        }
                     }
                 }
                 catch (Exception ex)
@@ -529,7 +537,7 @@ namespace Cassandra
             /// <summary>
             /// Table of exception constructors passed to Rust via TCB.
             /// Rust reads constructors from this table to build managed exceptions.
-            /// Any changes to this struct must be mirrored in Globals 
+            /// Any changes to this struct must be mirrored in Globals
             /// and in Rust code in the exact same order (alphabetical).
             /// </summary>
             [StructLayout(LayoutKind.Sequential)]

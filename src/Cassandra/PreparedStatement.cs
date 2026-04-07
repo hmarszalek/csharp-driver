@@ -93,6 +93,8 @@ namespace Cassandra
             get => bridgedPreparedStatement.GetConsistencyLevel();
         }
 
+        private volatile bool _hasIdempotence = false;
+
         /// <summary>
         /// Determines if the query is idempotent, i.e. whether it can be applied multiple times without 
         /// changing the result beyond the initial application.
@@ -102,7 +104,17 @@ namespace Cassandra
         /// </para>
         /// When the property is null, the driver will use the default value from the <see cref="QueryOptions.GetDefaultIdempotence()"/>.
         /// </summary>
-        public bool? IsIdempotent { get; private set; }
+        public bool? IsIdempotent
+        {
+            get
+            {
+                if (!_hasIdempotence)
+                {
+                    return null;
+                }
+                return bridgedPreparedStatement.IsIdempotent();
+            }
+        }
 
         public bool IsLwt => _isLwt;
 
@@ -271,7 +283,8 @@ namespace Cassandra
         /// </summary>
         public PreparedStatement SetIdempotence(bool value)
         {
-            IsIdempotent = value;
+            _hasIdempotence = true;
+            bridgedPreparedStatement.SetIsIdempotent(value);
             return this;
         }
 

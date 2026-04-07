@@ -216,3 +216,42 @@ pub extern "C" fn prepared_statement_set_consistency_level(
 
     FFIMaybeException::ok()
 }
+
+/// Gets whether the prepared statement is idempotent.
+#[unsafe(no_mangle)]
+pub extern "C" fn prepared_statement_get_is_idempotent(
+    prepared_statement_ptr: BridgedBorrowedSharedPtr<'_, BridgedPreparedStatement>,
+    is_idempotent: &mut FFIBool,
+) -> FFIMaybeException {
+    let prepared_statement = ArcFFI::as_ref(prepared_statement_ptr)
+        .expect("valid and non-null BridgedPreparedStatement pointer");
+
+    let guard = prepared_statement
+        .inner
+        .read()
+        .expect("poisoning impossible due to process-aborting panics");
+    let is_idempotent_value = guard.get_is_idempotent();
+
+    *is_idempotent = is_idempotent_value.into();
+
+    FFIMaybeException::ok()
+}
+
+/// Sets whether the prepared statement is idempotent.
+#[unsafe(no_mangle)]
+pub extern "C" fn prepared_statement_set_is_idempotent(
+    prepared_statement_ptr: BridgedBorrowedSharedPtr<'_, BridgedPreparedStatement>,
+    is_idempotent: FFIBool,
+) -> FFIMaybeException {
+    let prepared_statement = ArcFFI::as_ref(prepared_statement_ptr)
+        .expect("valid and non-null BridgedPreparedStatement pointer");
+
+    let mut guard = prepared_statement
+        .inner
+        .write()
+        .expect("poisoning impossible due to process-aborting panics");
+
+    guard.set_is_idempotent(is_idempotent.into());
+
+    FFIMaybeException::ok()
+}

@@ -182,3 +182,65 @@ pub extern "C" fn prepared_statement_is_lwt(
 
     FFIMaybeException::ok()
 }
+
+/// Gets consistency level of the prepared statement.
+#[unsafe(no_mangle)]
+pub extern "C" fn prepared_statement_get_consistency_level(
+    prepared_statement_ptr: BridgedBorrowedSharedPtr<'_, BridgedPreparedStatement>,
+    consistency_level: *mut i32,
+    constructors: &'static ExceptionConstructors,
+) -> FFIMaybeException {
+    let prepared_statement = ArcFFI::as_ref(prepared_statement_ptr)
+        .expect("valid and non-null BridgedPreparedStatement pointer");
+
+    let guard = match prepared_statement.inner.read() {
+        Ok(guard) => guard,
+        Err(err) => {
+            let ex = constructors.rust_exception_constructor.construct_from_rust(format!(
+                "BridgedPreparedStatement encountered lock error while reading consistency level: {err}"
+            ));
+            return FFIMaybeException::from_exception(ex);
+        }
+    };
+
+    // Rust's get_consistency() defaults to session's default_consistency if not set, so it always returns Some(consistency).
+    // Additionally, we set the prepared statement's consistency level to a default value (One) in the constructor, so it should never be None.
+    let consistency_level_value = guard.get_consistency().map(|cl| cl as i32).unwrap();
+
+    unsafe {
+        *consistency_level = consistency_level_value;
+    }
+    FFIMaybeException::ok()
+}
+
+/// Sets consistency level of the prepared statement.
+#[unsafe(no_mangle)]
+pub extern "C" fn prepared_statement_set_consistency_level(
+    prepared_statement_ptr: BridgedBorrowedSharedPtr<'_, BridgedPreparedStatement>,
+    consistency_level: u16,
+    constructors: &'static ExceptionConstructors,
+) -> FFIMaybeException {
+    let prepared_statement = ArcFFI::as_ref(prepared_statement_ptr)
+        .expect("valid and non-null BridgedPreparedStatement pointer");
+
+    let mut guard = match prepared_statement.inner.write() {
+        Ok(guard) => guard,
+        Err(err) => {
+            let ex = constructors.rust_exception_constructor.construct_from_rust(format!(
+                "BridgedPreparedStatement encountered lock error while setting consistency level: {err}"
+            ));
+            return FFIMaybeException::from_exception(ex);
+        }
+    };
+
+    let Ok(cl) = consistency_level.try_into() else {
+        let ex = constructors
+            .invalid_argument_exception_constructor
+            .construct_from_rust("Invalid consistency level value passed from C#.");
+        return FFIMaybeException::from_exception(ex);
+    };
+
+    guard.set_consistency(cl);
+
+    FFIMaybeException::ok()
+}

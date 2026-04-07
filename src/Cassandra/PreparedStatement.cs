@@ -88,7 +88,10 @@ namespace Cassandra
         /// <summary>
         /// Gets the default consistency level for all executions using this instance
         /// </summary>
-        public ConsistencyLevel? ConsistencyLevel { get; private set; }
+        public ConsistencyLevel ConsistencyLevel
+        {
+            get => bridgedPreparedStatement.GetConsistencyLevel();
+        }
 
         /// <summary>
         /// Determines if the query is idempotent, i.e. whether it can be applied multiple times without 
@@ -104,12 +107,14 @@ namespace Cassandra
         public bool IsLwt => _isLwt;
 
         // For use by the Rust interop code.
-        internal PreparedStatement(RustBridge.ManuallyDestructible mdPreparedStatement, string cql)
+        internal PreparedStatement(RustBridge.ManuallyDestructible mdPreparedStatement, string cql, QueryOptions queryOptions)
         {
             bridgedPreparedStatement = new BridgedPreparedStatement(mdPreparedStatement);
             _variablesMetadata = bridgedPreparedStatement.ExtractVariablesMetadataFromRust();
             Cql = cql;
             _isLwt = bridgedPreparedStatement.IsLwt();
+
+            SetConsistencyLevel(queryOptions.GetConsistencyLevel());
 
             // If the partition keys were parsed, set the routing indexes to them by default.
             if (_variablesMetadata.PartitionKeys != null)
@@ -179,7 +184,7 @@ namespace Cassandra
         /// <returns>this <c>PreparedStatement</c> object.</returns>
         public PreparedStatement SetConsistencyLevel(ConsistencyLevel consistency)
         {
-            ConsistencyLevel = consistency;
+            bridgedPreparedStatement.SetConsistencyLevel(consistency);
             return this;
         }
 

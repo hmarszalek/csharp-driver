@@ -391,7 +391,7 @@ namespace Cassandra
                 // Use GetAwaiter().GetResult() to unwrap AggregateException
                 // and throw the inner exception directly, avoiding double-wrapping.
                 RustBridge.ManuallyDestructible mdPreparedStatement = t.GetAwaiter().GetResult();
-                var ps = new PreparedStatement(mdPreparedStatement, cqlQuery);
+                var ps = new PreparedStatement(mdPreparedStatement, cqlQuery, Configuration.QueryOptions);
                 return ps;
             }, TaskContinuationOptions.ExecuteSynchronously);
         }

@@ -21,6 +21,7 @@ using System.Linq;
 using System.Net;
 using System.Threading;
 using System.Threading.Tasks;
+using Cassandra.Data.Linq;
 using Cassandra.Tasks;
 
 namespace Cassandra
@@ -332,7 +333,19 @@ namespace Cassandra
         /// </summary>
         public UdtColumnInfo GetUdtDefinition(string keyspace, string typeName)
         {
-            throw new NotImplementedException();
+            var session = _getActiveSessionOrThrow();
+            BridgedClusterState clusterState;
+            try
+            {
+                clusterState = session.GetClusterState();
+                var result = clusterState.GetUdtMetadata(keyspace, typeName);
+                clusterState.Dispose();
+                return result;
+            }
+            finally
+            {
+                session.DecreaseReferenceCount();
+            }
         }
 
         /// <summary>
@@ -340,7 +353,7 @@ namespace Cassandra
         /// </summary>
         public Task<UdtColumnInfo> GetUdtDefinitionAsync(string keyspace, string typeName)
         {
-            throw new NotImplementedException();
+            return Task.FromResult(GetUdtDefinition(keyspace, typeName));
         }
 
         /// <summary>

@@ -361,6 +361,121 @@ namespace Cassandra
             return tableNames;
         }
 
+        /// <summary>
+        /// Represents the context used during asynchronous retrieval of UDT metadata,
+        /// allowing to accumulate field definitions and construct
+        /// the final UdtColumnInfo object once all data is received from Rust.
+        /// </summary>
+        private sealed class UdtContext
+        {
+            internal string KeyspaceName;
+            internal List<ColumnDesc> Fields;
+            internal UdtColumnInfo UdtDefinition;
+
+            internal UdtContext(string keyspaceName)
+            {
+                KeyspaceName = keyspaceName;
+                Fields = new List<ColumnDesc>();
+            }
+        }
+
+        [DllImport("csharp_wrapper", CallingConvention = CallingConvention.Cdecl)]
+        unsafe private static extern FFIMaybeException cluster_state_get_udt_metadata(
+            IntPtr clusterState,
+            [MarshalAs(UnmanagedType.LPUTF8Str)] string keyspaceName,
+            [MarshalAs(UnmanagedType.LPUTF8Str)] string udtName,
+            IntPtr constructUdtFieldCallback,
+            IntPtr udtContextPtr,
+            IntPtr constructUdtMetadataCallback,
+            IntPtr constructorsPtr);
+
+        private static readonly unsafe delegate* unmanaged[Cdecl]<IntPtr, FFIString, byte, IntPtr, FFIMaybeException> ConstructUdtFieldPtr = &ConstructUdtField;
+
+        [UnmanagedCallersOnly(CallConvs = new Type[] { typeof(CallConvCdecl) })]
+        private static unsafe FFIMaybeException ConstructUdtField(
+            IntPtr udtContextPtr,
+            FFIString fieldName,
+            byte typeCode,
+            IntPtr typeInfoPtr)
+        {
+            try
+            {
+                var udtContext = Unsafe.AsRef<UdtContext>((void*)udtContextPtr);
+
+                var cqlTypeCode = (ColumnTypeCode)typeCode;
+                var field = new ColumnDesc
+                {
+                    Name = fieldName.ToManagedString(),
+                    TypeCode = cqlTypeCode,
+                    TypeInfo = typeInfoPtr != IntPtr.Zero ? BridgedRowSet.BuildTypeInfoFromHandle(typeInfoPtr, cqlTypeCode, udtContext.KeyspaceName) : null
+                };
+                udtContext.Fields.Add(field);
+
+                return FFIMaybeException.Ok();
+            }
+            catch (Exception ex)
+            {
+                return FFIMaybeException.FromException(ex);
+            }
+        }
+
+        private static readonly unsafe delegate* unmanaged[Cdecl]<IntPtr, FFIString, FFIMaybeException> FillUdtMetadataPtr = &FillUdtMetadata;
+
+        [UnmanagedCallersOnly(CallConvs = new Type[] { typeof(CallConvCdecl) })]
+        private static unsafe FFIMaybeException FillUdtMetadata(
+            IntPtr udtContextPtr,
+            FFIString udtName)
+        {
+            try
+            {
+                var udtContext = Unsafe.AsRef<UdtContext>((void*)udtContextPtr);
+
+                var udtDefinition = new UdtColumnInfo($"{udtContext.KeyspaceName}.{udtName.ToManagedString()}");
+                foreach (var field in udtContext.Fields)
+                {
+                    udtDefinition.Fields.Add(field);
+                }
+                udtContext.UdtDefinition = udtDefinition;
+                return FFIMaybeException.Ok();
+            }
+            catch (Exception ex)
+            {
+                return FFIMaybeException.FromException(ex);
+            }
+        }
+
+        internal UdtColumnInfo GetUdtMetadata(string keyspaceName, string udtName)
+        {
+            var udtContext = new UdtContext(keyspaceName);
+
+            try
+            {
+                unsafe
+                {
+                    RunWithIncrement(handle =>
+                        cluster_state_get_udt_metadata(
+                            handle,
+                            keyspaceName,
+                            udtName,
+                            (IntPtr)ConstructUdtFieldPtr,
+                            (IntPtr)Unsafe.AsPointer(ref udtContext),
+                            (IntPtr)FillUdtMetadataPtr,
+                            (IntPtr)Globals.ConstructorsPtr
+                        ));
+                }
+            }
+            catch (InvalidArgumentException)
+            {
+                return null;
+            }
+            catch (Exception ex)
+            {
+                throw new InvalidOperationException($"Error retrieving metadata for UDT '{udtName}' in keyspace '{keyspaceName}'.", ex);
+            }
+
+            return udtContext.UdtDefinition;
+        }
+
         private static readonly unsafe delegate* unmanaged[Cdecl]<IntPtr, FFIString, byte, IntPtr, FFIBool, FFIBool, FFIMaybeException> ConstructTableColumnPtr = &ConstructTableColumn;
         [UnmanagedCallersOnly(CallConvs = new Type[] { typeof(CallConvCdecl) })]
         private static unsafe FFIMaybeException ConstructTableColumn(

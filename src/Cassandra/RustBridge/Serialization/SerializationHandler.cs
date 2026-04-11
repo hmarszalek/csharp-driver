@@ -17,6 +17,13 @@ namespace Cassandra
         {
             ArgumentNullException.ThrowIfNull(values);
             var serializer = SerializerManager.Default.GetCurrentSerializer();
+            return InitializeSerializedValues(values, serializer);
+        }
+
+        internal static ISerializedValues InitializeSerializedValues(IEnumerable<object> values, ISerializer serializer)
+        {
+            ArgumentNullException.ThrowIfNull(values);
+            ArgumentNullException.ThrowIfNull(serializer);
 
             // Create the SerializedValues instance (which allocates the native container)
             // and populate it. If population fails, the instance is disposed, freeing the native memory immediately.

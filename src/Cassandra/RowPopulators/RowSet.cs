@@ -48,6 +48,7 @@ namespace Cassandra
         private bool _exhausted = false;
 
         private readonly BridgedRowSet bridgedRowSet;
+        private readonly IGenericSerializer _genericSerializer;
 
         /// <summary>
         /// Disposes the underlying Rust-allocated bridged row set.
@@ -115,12 +116,13 @@ namespace Cassandra
         /// <summary>
         /// Creates a new instance of RowSet.
         /// </summary>
-        internal RowSet(RustBridge.ManuallyDestructible mdRowSet)
+        internal RowSet(RustBridge.ManuallyDestructible mdRowSet, ISerializerManager serializerManager)
         {
             bridgedRowSet = new BridgedRowSet(mdRowSet);
             Columns = bridgedRowSet.ExtractColumnsFromRust();
             _exhausted = Columns.Length == 0;
             Info = new ExecutionInfo();
+            _genericSerializer = serializerManager?.GetGenericSerializer() ?? new GenericSerializer();
         }
 
         /// <summary>
@@ -133,6 +135,7 @@ namespace Cassandra
             Columns = new CqlColumn[0];
             AutoPage = true;
             _exhausted = true;
+            _genericSerializer = new GenericSerializer();
         }
 
 #nullable enable
@@ -145,8 +148,7 @@ namespace Cassandra
             }
             object[] values = new object[Columns.Length];
 
-            // TODO: reuse the serializer instance. Perhaps a static instance? Then no need to pass it around by pointer.
-            IGenericSerializer serializer = (IGenericSerializer)new GenericSerializer();
+            IGenericSerializer serializer = _genericSerializer;
 
             var hasRow = bridgedRowSet.NextRow(ref values, Columns, ref serializer);
             if (!hasRow)

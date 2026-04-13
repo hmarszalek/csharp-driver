@@ -282,7 +282,7 @@ pub extern "C" fn session_query_bound(
     session_ptr: BridgedBorrowedSharedPtr<'_, BridgedSession>,
     prepared_statement_ptr: BridgedBorrowedSharedPtr<'_, BridgedPreparedStatement>,
 ) {
-    let bridged_prepared = ArcFFI::cloned_from_ptr(prepared_statement_ptr).unwrap();
+    let bridged_prepared = ArcFFI::as_ref(prepared_statement_ptr).unwrap();
     let session_arc = ArcFFI::cloned_from_ptr(session_ptr).unwrap();
 
     tracing::trace!("[FFI] Scheduling prepared statement execution");
@@ -290,6 +290,9 @@ pub extern "C" fn session_query_bound(
     // Try to acquire an owned read lock.
     // If the operation fails, treat it as session shutting down.
     let session_guard_res = session_arc.try_read_owned();
+
+    // Clone the prepared statement to move it into the async task.
+    let prepared_statement = bridged_prepared.inner.clone();
 
     BridgedFuture::spawn::<_, _, MaybeShutdownError<PagerExecutionError>, _>(tcb, async move {
         tracing::debug!("[FFI] Executing prepared statement");
@@ -310,7 +313,7 @@ pub extern "C" fn session_query_bound(
         // Map underlying `PagerExecutionError` into `MaybeShutdownError::Inner` so
         // the BridgedFuture's error type matches.
         let query_pager = session
-            .execute_iter(bridged_prepared.inner.clone(), ())
+            .execute_iter(prepared_statement, ())
             .await
             .map_err(MaybeShutdownError::Inner)?;
 
@@ -340,7 +343,7 @@ pub extern "C" fn session_query_bound_with_values(
             }
         };
 
-    let bridged_prepared = ArcFFI::cloned_from_ptr(prepared_statement_ptr).unwrap();
+    let bridged_prepared = ArcFFI::as_ref(prepared_statement_ptr).unwrap();
     let session_arc = ArcFFI::cloned_from_ptr(session_ptr).unwrap();
 
     tracing::trace!("[FFI] Scheduling prepared statement execution");
@@ -348,6 +351,9 @@ pub extern "C" fn session_query_bound_with_values(
     // Try to acquire an owned read lock.
     // If the operation fails, treat it as session shutting down.
     let session_guard_res = session_arc.try_read_owned();
+
+    // Clone the prepared statement to move it into the async task.
+    let prepared_statement = bridged_prepared.inner.clone();
 
     BridgedFuture::spawn::<_, _, MaybeShutdownError<PagerExecutionError>, _>(tcb, async move {
         tracing::debug!("[FFI] Executing prepared statement");
@@ -367,7 +373,7 @@ pub extern "C" fn session_query_bound_with_values(
         let serialized_values: SerializedValues = psv.into_serialized_values();
 
         let query_pager = session
-            .execute_iter_preserialized(bridged_prepared.inner.clone(), serialized_values)
+            .execute_iter_preserialized(prepared_statement, serialized_values)
             .await
             .map_err(MaybeShutdownError::Inner)?;
 

@@ -1,5 +1,5 @@
 use crate::error_conversion::FFIMaybeException;
-use crate::ffi::{ArcFFI, BridgedBorrowedSharedPtr, FFI, FFIPtr, FFIStr, FromArc, RefFFI};
+use crate::ffi::{ArcFFI, BridgedBorrowedSharedPtr, FFI, FFIBool, FFIPtr, FFIStr, FromArc, RefFFI};
 use crate::row_set::column_type_to_code;
 use scylla::frame::response::result::ColumnType;
 use scylla::statement::prepared::PreparedStatement;
@@ -16,14 +16,17 @@ impl FFI for BridgedPreparedStatement {
 #[unsafe(no_mangle)]
 pub extern "C" fn prepared_statement_is_lwt(
     prepared_statement_ptr: BridgedBorrowedSharedPtr<'_, BridgedPreparedStatement>,
-    is_lwt: *mut bool,
+    is_lwt: *mut FFIBool,
 ) -> FFIMaybeException {
+    let prepared_statement = ArcFFI::as_ref(prepared_statement_ptr)
+        .expect("valid and non-null BridgedPreparedStatement pointer");
+
+    let is_lwt_value = prepared_statement.inner.is_confirmed_lwt();
+
     unsafe {
-        *is_lwt = ArcFFI::as_ref(prepared_statement_ptr)
-            .unwrap()
-            .inner
-            .is_confirmed_lwt();
+        *is_lwt = is_lwt_value.into();
     }
+
     FFIMaybeException::ok()
 }
 

@@ -299,11 +299,6 @@ namespace Cassandra
         /// </summary>
         internal bool HasNewResultMetadataId() => NewResultMetadataId != null;
 
-        // for testing
-        internal RowSetMetadata()
-        {
-        }
-
         /// Initializes a new instance of the RowSetMetadata class with the provided columns, partition keys,
         /// keyspace and table information, and builds the column index mapping.
         /// Used by the Rust bridge when extracting metadata from prepared statements, allowing for more detailed metadata information to be included.

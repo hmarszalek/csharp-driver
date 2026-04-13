@@ -20,9 +20,9 @@ namespace Cassandra
         {
             // Query Rust for the number of variable column specs
             var count = GetVariablesColumnSpecsCount();
-            if (count <= 0)
+            if (count == 0)
             {
-                return new RowSetMetadata();
+                return new RowSetMetadata(Array.Empty<CqlColumn>());
             }
 
             var columns = new CqlColumn[count];
@@ -42,10 +42,7 @@ namespace Cassandra
                 );
             }
 
-            var metadata = new RowSetMetadata
-            {
-                Columns = columns
-            };
+            var metadata = new RowSetMetadata(columns);
 
             return metadata;
         }

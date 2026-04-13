@@ -1,4 +1,4 @@
-use crate::error_conversion::FFIException;
+use crate::error_conversion::FFIMaybeException;
 use std::ffi::{CStr, c_char, c_void};
 use std::fmt::Debug;
 use std::marker::PhantomData;
@@ -847,7 +847,7 @@ enum CSharpManagedString {}
 pub(crate) struct CSharpManagedStringPtr(FFIPtr<'static, CSharpManagedString>);
 
 pub(crate) type WriteStringCallback =
-    extern "C" fn(FFIStr<'_>, CSharpManagedStringPtr) -> FFIException;
+    extern "C" fn(FFIStr<'_>, CSharpManagedStringPtr) -> FFIMaybeException;
 
 /// Feeds each item from an iterator to a C FFI callback, one at a time.
 ///
@@ -859,9 +859,9 @@ pub(crate) type WriteStringCallback =
 /// - `context` must remain valid for the duration of iteration
 pub(crate) unsafe fn ffi_callback_for_each<Ctx: Copy, T>(
     context: Ctx,
-    callback: unsafe extern "C" fn(Ctx, T) -> FFIException,
+    callback: unsafe extern "C" fn(Ctx, T) -> FFIMaybeException,
     iter: impl Iterator<Item = T>,
-) -> FFIException {
+) -> FFIMaybeException {
     for item in iter {
         unsafe {
             let res = callback(context, item);
@@ -870,5 +870,143 @@ pub(crate) unsafe fn ffi_callback_for_each<Ctx: Copy, T>(
             }
         }
     }
-    FFIException::ok()
+    FFIMaybeException::ok()
+}
+
+#[repr(transparent)]
+pub(crate) struct GCHandlePtr<'a, T>(FFINonNullPtr<'a, T>);
+
+impl<'a, T> Debug for GCHandlePtr<'a, T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
+unsafe impl<T> Send for GCHandlePtr<'_, T> {}
+
+// Compile-time assertion that `GCHandlePtr` is pointer-sized.
+// Ensures ABI compatibility with C#.
+const _: [(); std::mem::size_of::<GCHandlePtr<'_, ()>>()] = [(); std::mem::size_of::<*const ()>()];
+
+/// A pointer to GCHandle owned by Rust, together with the destructor.
+/// This is useful to ensure that GCHandle is freed when Rust-side
+/// object is dropped. Mainly employable in async scenarios.
+#[repr(C)]
+pub struct FFIGCHandle<T> {
+    gchandle: GCHandlePtr<'static, T>,
+    free: unsafe extern "C" fn(GCHandlePtr<T>),
+}
+
+impl<T> FFIGCHandle<T> {
+    /// Borrows the GCHandle, for use by C#.
+    /// Borrow checker prevents use-after-free, ensuring that FFIGCHandle
+    /// is kept alive.
+    #[expect(dead_code)] // Will be used soon.
+    pub(crate) fn borrow<'gc>(&'gc self) -> GCHandlePtr<'gc, T> {
+        GCHandlePtr(self.gchandle.0)
+    }
+
+    pub(crate) fn into_ffi_maybe_gc_handle(self) -> FFIMaybeGCHandle<T> {
+        // We perform a move wrt ownership: MaybeRustFreeableHandle now owns the gchandle, not we.
+        let ret = FFIMaybeGCHandle {
+            gchandle: Some(GCHandlePtr(self.gchandle.0)),
+            free: Some(self.free),
+        };
+
+        // This is crucial: we must prevent freeing the GCHandle here.
+        std::mem::forget(self);
+
+        ret
+    }
+}
+
+impl<T> Debug for FFIGCHandle<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("FFIGCHandle")
+            .field("gchandle", &self.gchandle)
+            .field("free", &self.free)
+            .finish()
+    }
+}
+
+impl<T> Drop for FFIGCHandle<T> {
+    fn drop(&mut self) {
+        unsafe {
+            // SAFETY: free function is provided by the user of the struct.
+            // The GCHandlePtr is "cloned" manually here, because it purposely does not
+            // implement Clone to avoid accidental double-free, as well as accidental UAF.
+            (self.free)(GCHandlePtr(self.gchandle.0));
+        }
+    }
+}
+
+/// An **optional** pointer to GCHandle owned by Rust, together with the destructor.
+/// This is useful to ensure that GCHandle is freed when Rust-side
+/// object is dropped. Mainly employable in async scenarios.
+#[repr(C)]
+pub struct FFIMaybeGCHandle<T> {
+    gchandle: Option<GCHandlePtr<'static, T>>,
+    free: Option<unsafe extern "C" fn(GCHandlePtr<T>)>,
+}
+
+impl<T> FFIMaybeGCHandle<T> {
+    pub(crate) fn empty() -> Self {
+        Self {
+            gchandle: None,
+            free: None,
+        }
+    }
+
+    pub(crate) fn is_empty(&self) -> bool {
+        self.gchandle.is_none()
+    }
+
+    /// Borrows the GCHandle, for use by C#.
+    /// Borrow checker prevents use-after-free, ensuring that FFIGCHandle
+    /// is kept alive.
+    #[expect(dead_code)] // Will be used soon.
+    pub(crate) fn borrow<'gc>(&'gc self) -> Option<GCHandlePtr<'gc, T>> {
+        self.gchandle
+            .as_ref()
+            .map(|&GCHandlePtr(ptr)| GCHandlePtr(ptr))
+    }
+
+    pub(crate) fn try_into_ffi_gc_handle(self) -> Option<FFIGCHandle<T>> {
+        // We perform a move wrt ownership: RustFreeableHandle now owns the gchandle, not we.
+        let (Some(gchandle), Some(free)) = (&self.gchandle, self.free) else {
+            return None;
+        };
+
+        let ret = FFIGCHandle {
+            gchandle: GCHandlePtr(gchandle.0),
+            free,
+        };
+
+        // This is crucial: we must prevent freeing the GCHandle here.
+        std::mem::forget(self);
+
+        Some(ret)
+    }
+}
+
+impl<T> Debug for FFIMaybeGCHandle<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("FFIMaybeGCHandle")
+            .field("gchandle", &self.gchandle)
+            .field("free", &self.free)
+            .finish()
+    }
+}
+
+impl<T> Drop for FFIMaybeGCHandle<T> {
+    fn drop(&mut self) {
+        if let (Some(gchandle), Some(free)) = (&self.gchandle, self.free) {
+            // SAFETY: free function is provided by the user of the struct.
+            // The GCHandlePtr is "cloned" manually here, because it purposely does not
+            // implement Clone to avoid accidental double-free, as well as accidental UAF.
+            unsafe {
+                (free)(GCHandlePtr(gchandle.0));
+            }
+        }
+    }
 }

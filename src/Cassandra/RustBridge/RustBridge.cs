@@ -15,6 +15,91 @@ namespace Cassandra
     static class RustBridge
     {
         /// <summary>
+        /// Struct used to pass a GCHandle along with its destructor function pointer.
+        /// This is used to transfer ownership of GCHandles to Rust code.
+        /// All changes to this struct's fields must be mirrored in Rust code in the exact same order.
+        /// </summary>
+        [StructLayout(LayoutKind.Sequential)]
+        internal readonly struct FFIGCHandle
+        {
+            internal readonly IntPtr gchandle;
+            internal readonly IntPtr free;
+
+            internal FFIGCHandle(GCHandle handle)
+            {
+                gchandle = GCHandle.ToIntPtr(handle);
+                unsafe
+                {
+                    free = (IntPtr)freeGCHandleDel;
+                }
+            }
+
+            internal unsafe readonly static delegate* unmanaged[Cdecl]<IntPtr, void> freeGCHandleDel = &FreeGCHandle;
+
+            [UnmanagedCallersOnly(CallConvs = new Type[] { typeof(CallConvCdecl) })]
+            internal static void FreeGCHandle(IntPtr gchandlePtr)
+            {
+                var handle = GCHandle.FromIntPtr(gchandlePtr);
+                if (handle.IsAllocated)
+                {
+                    handle.Free();
+                }
+            }
+        }
+
+        /// <summary>
+        /// Struct used to pass an *optional* GCHandle along with its destructor function pointer.
+        /// This is used to transfer ownership of GCHandles to Rust code.
+        /// All changes to this struct's fields must be mirrored in Rust code in the exact same order.
+        /// </summary>
+        [StructLayout(LayoutKind.Sequential)]
+        internal readonly struct FFIMaybeGCHandle
+        {
+            internal readonly IntPtr gchandle;
+            internal readonly IntPtr free;
+
+            internal FFIMaybeGCHandle(GCHandle handle)
+            {
+                gchandle = GCHandle.ToIntPtr(handle);
+                unsafe
+                {
+                    free = (IntPtr)freeGCHandleDel;
+                }
+            }
+
+            // Intended just for null instantiation using `empty()`.
+            private FFIMaybeGCHandle(IntPtr _gchandle, IntPtr _free)
+            {
+                gchandle = _gchandle;
+                free = _free;
+            }
+
+            static internal FFIMaybeGCHandle Empty()
+            {
+                return new FFIMaybeGCHandle(IntPtr.Zero, IntPtr.Zero);
+            }
+
+            internal bool IsEmpty()
+            {
+                return gchandle == IntPtr.Zero;
+            }
+
+            internal unsafe readonly static delegate* unmanaged[Cdecl]<IntPtr, void> freeGCHandleDel = &FreeGCHandle;
+
+            [UnmanagedCallersOnly(CallConvs = new Type[] { typeof(CallConvCdecl) })]
+            internal static void FreeGCHandle(IntPtr gchandlePtr)
+            {
+                var handle = GCHandle.FromIntPtr(gchandlePtr);
+                if (handle.IsAllocated)
+                {
+                    handle.Free();
+                }
+            }
+        }
+
+
+
+        /// <summary>
         /// Represents a UTF-8 string passed over FFI boundary.
         /// Used to pass strings from Rust to C#.
         /// </summary>
@@ -38,10 +123,10 @@ namespace Cassandra
 
         internal static class FFIManagedStringWriter
         {
-            unsafe static internal readonly delegate* unmanaged[Cdecl]<FFIString, IntPtr, FFIException> WriteToStrPtr = &WriteToString;
+            unsafe static internal readonly delegate* unmanaged[Cdecl]<FFIString, IntPtr, FFIMaybeException> WriteToStrPtr = &WriteToString;
 
             [UnmanagedCallersOnly(CallConvs = new Type[] { typeof(CallConvCdecl) })]
-            internal static unsafe FFIException WriteToString(FFIString str, IntPtr ptr)
+            internal static unsafe FFIMaybeException WriteToString(FFIString str, IntPtr ptr)
             {
                 try
                 {
@@ -51,9 +136,9 @@ namespace Cassandra
                 catch (Exception ex)
                 {
                     Console.Error.WriteLine($"[FFI] WriteToString threw exception: {ex}");
-                    return FFIException.FromException(ex);
+                    return FFIMaybeException.FromException(ex);
                 }
-                return FFIException.Ok();
+                return FFIMaybeException.Ok();
             }
 
             internal class StringContainer
@@ -140,14 +225,14 @@ namespace Cassandra
             /// <summary>
             /// This must return a pointer to the appropriate [UnmanagedCallersOnly] CompleteTask method for the result type R.
             /// This MUST have the following signature:
-            /// unsafe static delegate* unmanaged[Cdecl]&lt;IntPtr tcs, Self this, void&gt;
+            /// unsafe static delegate* unmanaged[Cdecl]&lt;FFIGCHandle tcs, Self this, void&gt;
             /// </summary>
             internal static abstract IntPtr CompleteTaskDelegate { get; }
 
             /// <summary>
             /// This must return a pointer to the appropriate [UnmanagedCallersOnly] FailTask method for the result type R.
             /// This MUST have the following signature:
-            /// unsafe static delegate* unmanaged[Cdecl]&lt;IntPtr tcs, FFIException exception_ptr, void&gt;
+            /// unsafe static delegate* unmanaged[Cdecl]&lt;FFIGCHandle tcs, FFIMaybeException exception_ptr, void&gt;
             /// </summary>
             internal static abstract IntPtr FailTaskDelegate { get; }
         }
@@ -173,32 +258,32 @@ namespace Cassandra
             /// <summary>
             /// This shall be called by Rust code when the operation is completed.
             /// </summary>
-            // Signature in Rust: extern "C" fn(tcs: *mut c_void, res: bool)
+            // Signature in Rust: extern "C" fn(tcs: FFIGCHandle, res: bool)
             //
             // This attribute makes the method callable from native code.
             // It also allows taking a function pointer to the method.
             [UnmanagedCallersOnly(CallConvs = new Type[] { typeof(CallConvCdecl) })]
-            internal static void CompleteTask(IntPtr tcsPtr, FFIBool result)
+            internal static void CompleteTask(FFIGCHandle tcsHandle, FFIBool result)
             {
-                Tcb<FFIBool>.CompleteTask(tcsPtr, result);
+                Tcb<FFIBool>.CompleteTask(tcsHandle, result);
             }
 
             /// <summary>
             /// This shall be called by Rust code when the operation failed.
             /// </summary>
             //
-            // Signature in Rust: extern "C" fn(tcs: *mut c_void, exception_handle: ExceptionPtr)
+            // Signature in Rust: extern "C" fn(tcs: FFIGCHandle, exception_handle: FFIException)
             //
             // This attribute makes the method callable from native code.
             // It also allows taking a function pointer to the method.
             [UnmanagedCallersOnly(CallConvs = new Type[] { typeof(CallConvCdecl) })]
-            internal static void FailTask(IntPtr tcsPtr, FFIException exceptionPtr)
+            internal static void FailTask(FFIGCHandle tcsHandle, FFIMaybeException ffiException)
             {
-                Tcb<FFIBool>.FailTask(tcsPtr, exceptionPtr);
+                Tcb<FFIBool>.FailTask(tcsHandle, ffiException);
             }
 
-            internal unsafe readonly static delegate* unmanaged[Cdecl]<IntPtr, FFIBool, void> completeTaskDel = &CompleteTask;
-            internal unsafe readonly static delegate* unmanaged[Cdecl]<IntPtr, FFIException, void> failTaskDel = &FailTask;
+            internal unsafe readonly static delegate* unmanaged[Cdecl]<FFIGCHandle, FFIBool, void> completeTaskDel = &CompleteTask;
+            internal unsafe readonly static delegate* unmanaged[Cdecl]<FFIGCHandle, FFIMaybeException, void> failTaskDel = &FailTask;
 
             static IntPtr IBridgedTaskResult.CompleteTaskDelegate
             {
@@ -243,28 +328,28 @@ namespace Cassandra
             /// <summary>
             /// This shall be called by Rust code when the operation is completed.
             /// </summary>
-            // Signature in Rust: extern "C" fn(tcs: *mut c_void, res: ManuallyDestructible)
+            // Signature in Rust: extern "C" fn(tcs: FFIGCHandle, res: ManuallyDestructible)
             //
             // This attribute makes the method callable from native code.
             // It also allows taking a function pointer to the method.
             [UnmanagedCallersOnly(CallConvs = new Type[] { typeof(CallConvCdecl) })]
-            internal static void CompleteTask(IntPtr tcsPtr, ManuallyDestructible manuallyDestructible)
+            internal static void CompleteTask(FFIGCHandle tcsHandle, ManuallyDestructible manuallyDestructible)
             {
-                Tcb<ManuallyDestructible>.CompleteTask(tcsPtr, manuallyDestructible);
+                Tcb<ManuallyDestructible>.CompleteTask(tcsHandle, manuallyDestructible);
             }
 
             /// <summary>
             /// This shall be called by Rust code when the operation failed.
             /// </summary>
             //
-            // Signature in Rust: extern "C" fn(tcs: *mut c_void, exception_handle: ExceptionPtr)
+            // Signature in Rust: extern "C" fn(tcs: FFIGCHandle, exception_handle: FFIException)
             //
             // This attribute makes the method callable from native code.
             // It also allows taking a function pointer to the method.
             [UnmanagedCallersOnly(CallConvs = new Type[] { typeof(CallConvCdecl) })]
-            internal static void FailTask(IntPtr tcsPtr, FFIException exceptionPtr)
+            internal static void FailTask(FFIGCHandle tcsHandle, FFIMaybeException ffiException)
             {
-                Tcb<ManuallyDestructible>.FailTask(tcsPtr, exceptionPtr);
+                Tcb<ManuallyDestructible>.FailTask(tcsHandle, ffiException);
             }
 
 
@@ -280,8 +365,8 @@ namespace Cassandra
             // `unsafe` is required to get a function pointer to a static method.
             // Note that we can get this pointer because the method is static and
             // decorated with [UnmanagedCallersOnly].
-            internal unsafe readonly static delegate* unmanaged[Cdecl]<IntPtr, ManuallyDestructible, void> completeTaskDel = &CompleteTask;
-            internal unsafe readonly static delegate* unmanaged[Cdecl]<IntPtr, FFIException, void> failTaskDel = &FailTask;
+            internal unsafe readonly static delegate* unmanaged[Cdecl]<FFIGCHandle, ManuallyDestructible, void> completeTaskDel = &CompleteTask;
+            internal unsafe readonly static delegate* unmanaged[Cdecl]<FFIGCHandle, FFIMaybeException, void> failTaskDel = &FailTask;
 
             static IntPtr IBridgedTaskResult.CompleteTaskDelegate
             {
@@ -322,7 +407,7 @@ namespace Cassandra
             ///  and freed by the C# callback executed by the Rust code once the operation
             ///  is completed (either successfully or with an error).
             /// </summary>
-            internal readonly IntPtr tcs;
+            internal readonly FFIGCHandle tcs;
 
             /// <summary>
             ///  Pointer to the C# method to call when the operation is completed successfully.
@@ -342,7 +427,7 @@ namespace Cassandra
             /// </summary>
             private readonly IntPtr constructors;
 
-            private Tcb(IntPtr tcs, IntPtr completeTask, IntPtr failTask)
+            private Tcb(FFIGCHandle tcs, IntPtr completeTask, IntPtr failTask)
             {
                 this.tcs = tcs;
                 this.complete_task = completeTask;
@@ -370,32 +455,30 @@ namespace Cassandra
                  * We must remember to free the handle later when the TCS is completed (see CompleteTask
                  * method).
                  */
-                var handle = GCHandle.Alloc(tcs);
-
-                IntPtr tcsPtr = GCHandle.ToIntPtr(handle);
+                var tcsHandle = new FFIGCHandle(GCHandle.Alloc(tcs));
 
                 // `unsafe` is required to get a function pointer to a static method.
                 unsafe
                 {
                     IntPtr completeTaskPtr = R.CompleteTaskDelegate;
                     IntPtr failTaskPtr = R.FailTaskDelegate;
-                    return new Tcb<R>(tcsPtr, completeTaskPtr, failTaskPtr);
+                    return new Tcb<R>(tcsHandle, completeTaskPtr, failTaskPtr);
                 }
             }
 
             /// <summary>
             /// This shall be called by Rust code when the operation is completed.
             /// </summary>
-            // Signature in Rust: extern "C" fn(tcs: *mut c_void, res: R)
+            // Signature in Rust: extern "C" fn(tcs: FFIGCHandle, res: R)
             //
             // This attribute makes the method callable from native code.
             // It also allows taking a function pointer to the method.
-            internal static void CompleteTask(IntPtr tcsPtr, R result)
+            internal static void CompleteTask(FFIGCHandle tcsHandle, R result)
             {
                 try
                 {
                     // Recover the GCHandle that was allocated for the TaskCompletionSource.
-                    var handle = GCHandle.FromIntPtr(tcsPtr);
+                    var handle = GCHandle.FromIntPtr(tcsHandle.gchandle);
 
                     try
                     {
@@ -433,16 +516,16 @@ namespace Cassandra
             /// This shall be called by Rust code when the operation failed.
             /// </summary>
             //
-            // Signature in Rust: extern "C" fn(tcs: *mut c_void, exception_handle: ExceptionPtr)
+            // Signature in Rust: extern "C" fn(tcs: FFIGCHandle, exception_handle: FFIException)
             //
             // This attribute makes the method callable from native code.
             // It also allows taking a function pointer to the method.
-            internal static void FailTask(IntPtr tcsPtr, FFIException exceptionPtr)
+            internal static void FailTask(FFIGCHandle tcsHandle, FFIMaybeException ffiException)
             {
                 try
                 {
                     // Recover the GCHandle that was allocated for the TaskCompletionSource.
-                    var handle = GCHandle.FromIntPtr(tcsPtr);
+                    var handle = GCHandle.FromIntPtr(tcsHandle.gchandle);
 
                     try
                     {
@@ -451,10 +534,10 @@ namespace Cassandra
                         {
                             // Create the exception to pass to the TCS.
                             Exception exception;
-                            if (exceptionPtr.exception != IntPtr.Zero)
+                            if (ffiException.HasException)
                             {
                                 // Recover the exception from the GCHandle passed from Rust.
-                                var exHandle = GCHandle.FromIntPtr(exceptionPtr.exception);
+                                var exHandle = GCHandle.FromIntPtr(ffiException.maybeException.gchandle);
                                 try
                                 {
                                     if (exHandle.Target is Exception ex)
@@ -515,24 +598,24 @@ namespace Cassandra
         internal static unsafe class Globals
         {
             // Exception constructors passed to Rust
-            unsafe readonly static delegate* unmanaged[Cdecl]<FFIString, FFIString, IntPtr> AlreadyExistsConstructorPtr = &AlreadyExistsException.AlreadyExistsExceptionFromRust;
-            unsafe readonly static delegate* unmanaged[Cdecl]<FFIString, IntPtr> AlreadyShutdownExceptionConstructorPtr = &AlreadyShutdownException.AlreadyShutdownExceptionFromRust;
-            unsafe readonly static delegate* unmanaged[Cdecl]<FFIString, IntPtr> DeserializationExceptionConstructorPtr = &DeserializationException.DeserializationExceptionFromRust;
-            unsafe readonly static delegate* unmanaged[Cdecl]<FFIString, IntPtr> FunctionFailureExceptionConstructorPtr = &FunctionFailureException.FunctionFailureExceptionFromRust;
-            unsafe readonly static delegate* unmanaged[Cdecl]<FFIString, IntPtr> InvalidArgumentExceptionConstructorPtr = &InvalidArgumentException.InvalidArgumentExceptionFromRust;
-            unsafe readonly static delegate* unmanaged[Cdecl]<FFIString, IntPtr> InvalidConfigurationInQueryExceptionConstructorPtr = &InvalidConfigurationInQueryException.InvalidConfigurationInQueryExceptionFromRust;
-            unsafe readonly static delegate* unmanaged[Cdecl]<FFIString, IntPtr> InvalidQueryConstructorPtr = &InvalidQueryException.InvalidQueryExceptionFromRust;
-            unsafe readonly static delegate* unmanaged[Cdecl]<FFIString, IntPtr> InvalidTypeExceptionConstructorPtr = &InvalidTypeException.InvalidTypeExceptionFromRust;
-            unsafe readonly static delegate* unmanaged[Cdecl]<FFIString, IntPtr> NoHostAvailableExceptionConstructorPtr = &NoHostAvailableException.NoHostAvailableExceptionFromRust;
-            unsafe readonly static delegate* unmanaged[Cdecl]<int, IntPtr> OperationTimedOutExceptionConstructorPtr = &OperationTimedOutException.OperationTimedOutExceptionFromRust;
-            unsafe readonly static delegate* unmanaged[Cdecl]<FFIString, FFISliceRaw, IntPtr> PreparedQueryNotFoundExceptionConstructorPtr = &PreparedQueryNotFoundException.PreparedQueryNotFoundExceptionFromRust;
-            unsafe readonly static delegate* unmanaged[Cdecl]<FFIString, IntPtr> RequestInvalidExceptionConstructorPtr = &RequestInvalidException.RequestInvalidExceptionFromRust;
-            unsafe readonly static delegate* unmanaged[Cdecl]<FFIString, IntPtr> RustExceptionConstructorPtr = &RustException.RustExceptionFromRust;
-            unsafe readonly static delegate* unmanaged[Cdecl]<FFIString, IntPtr> SerializationExceptionConstructorPtr = &SerializationException.SerializationExceptionFromRust;
-            unsafe readonly static delegate* unmanaged[Cdecl]<FFIString, IntPtr> SyntaxErrorExceptionConstructorPtr = &SyntaxError.SyntaxErrorFromRust;
-            unsafe readonly static delegate* unmanaged[Cdecl]<FFIString, IntPtr> TraceRetrievalExceptionConstructorPtr = &TraceRetrievalException.TraceRetrievalExceptionFromRust;
-            unsafe readonly static delegate* unmanaged[Cdecl]<FFIString, IntPtr> TruncateExceptionConstructorPtr = &TruncateException.TruncateExceptionFromRust;
-            unsafe readonly static delegate* unmanaged[Cdecl]<FFIString, IntPtr> UnauthorizedExceptionConstructorPtr = &UnauthorizedException.UnauthorizedExceptionFromRust;
+            unsafe readonly static delegate* unmanaged[Cdecl]<FFIString, FFIString, FFIGCHandle> AlreadyExistsConstructorPtr = &AlreadyExistsException.AlreadyExistsExceptionFromRust;
+            unsafe readonly static delegate* unmanaged[Cdecl]<FFIString, FFIGCHandle> AlreadyShutdownExceptionConstructorPtr = &AlreadyShutdownException.AlreadyShutdownExceptionFromRust;
+            unsafe readonly static delegate* unmanaged[Cdecl]<FFIString, FFIGCHandle> DeserializationExceptionConstructorPtr = &DeserializationException.DeserializationExceptionFromRust;
+            unsafe readonly static delegate* unmanaged[Cdecl]<FFIString, FFIGCHandle> FunctionFailureExceptionConstructorPtr = &FunctionFailureException.FunctionFailureExceptionFromRust;
+            unsafe readonly static delegate* unmanaged[Cdecl]<FFIString, FFIGCHandle> InvalidArgumentExceptionConstructorPtr = &InvalidArgumentException.InvalidArgumentExceptionFromRust;
+            unsafe readonly static delegate* unmanaged[Cdecl]<FFIString, FFIGCHandle> InvalidConfigurationInQueryExceptionConstructorPtr = &InvalidConfigurationInQueryException.InvalidConfigurationInQueryExceptionFromRust;
+            unsafe readonly static delegate* unmanaged[Cdecl]<FFIString, FFIGCHandle> InvalidQueryConstructorPtr = &InvalidQueryException.InvalidQueryExceptionFromRust;
+            unsafe readonly static delegate* unmanaged[Cdecl]<FFIString, FFIGCHandle> InvalidTypeExceptionConstructorPtr = &InvalidTypeException.InvalidTypeExceptionFromRust;
+            unsafe readonly static delegate* unmanaged[Cdecl]<FFIString, FFIGCHandle> NoHostAvailableExceptionConstructorPtr = &NoHostAvailableException.NoHostAvailableExceptionFromRust;
+            unsafe readonly static delegate* unmanaged[Cdecl]<int, FFIGCHandle> OperationTimedOutExceptionConstructorPtr = &OperationTimedOutException.OperationTimedOutExceptionFromRust;
+            unsafe readonly static delegate* unmanaged[Cdecl]<FFIString, FFISliceRaw, FFIGCHandle> PreparedQueryNotFoundExceptionConstructorPtr = &PreparedQueryNotFoundException.PreparedQueryNotFoundExceptionFromRust;
+            unsafe readonly static delegate* unmanaged[Cdecl]<FFIString, FFIGCHandle> RequestInvalidExceptionConstructorPtr = &RequestInvalidException.RequestInvalidExceptionFromRust;
+            unsafe readonly static delegate* unmanaged[Cdecl]<FFIString, FFIGCHandle> RustExceptionConstructorPtr = &RustException.RustExceptionFromRust;
+            unsafe readonly static delegate* unmanaged[Cdecl]<FFIString, FFIGCHandle> SerializationExceptionConstructorPtr = &SerializationException.SerializationExceptionFromRust;
+            unsafe readonly static delegate* unmanaged[Cdecl]<FFIString, FFIGCHandle> SyntaxErrorExceptionConstructorPtr = &SyntaxError.SyntaxErrorFromRust;
+            unsafe readonly static delegate* unmanaged[Cdecl]<FFIString, FFIGCHandle> TraceRetrievalExceptionConstructorPtr = &TraceRetrievalException.TraceRetrievalExceptionFromRust;
+            unsafe readonly static delegate* unmanaged[Cdecl]<FFIString, FFIGCHandle> TruncateExceptionConstructorPtr = &TruncateException.TruncateExceptionFromRust;
+            unsafe readonly static delegate* unmanaged[Cdecl]<FFIString, FFIGCHandle> UnauthorizedExceptionConstructorPtr = &UnauthorizedException.UnauthorizedExceptionFromRust;
 
             /// <summary>
             /// Table of exception constructors passed to Rust via TCB.
@@ -642,57 +725,56 @@ namespace Cassandra
         }
 
         /// <summary>
-        /// Package used to pass exceptions from Rust to C# over FFI boundary.
-        /// If the underlying pointer is IntPtr.Zero, no exception occurred.
-        /// If it's non-zero, it points to a GCHandle referencing the Exception.
+        /// Package used to pass optional exceptions from Rust to C# over FFI boundary.
+        /// If the underlying FFIMaybeGCHandle is empty, no exception occurred.
+        /// If it's non-empty, it points to a GCHandle referencing the Exception.
         /// This handle must be freed even when a different exception is thrown.
         /// All changes to this struct's fields must be mirrored in Rust code in the exact same order.
         /// </summary>
+        // Note that there's no FFIException on the C# side, because lack of move semantics in C# makes
+        // it impossible to enforce _freeing exactly once_.
         [StructLayout(LayoutKind.Sequential)]
-        internal struct FFIException
+        internal struct FFIMaybeException
         {
             // Fields:
-            // Pointer to a GCHandle referencing the Exception.
-            internal IntPtr exception;
+            // Maybe a GCHandle referencing the Exception.
+            internal FFIMaybeGCHandle maybeException;
 
             // Functions:
-            // Creates an FFIException from the given Exception.
-            internal static FFIException FromException(Exception ex)
+            private FFIMaybeException(FFIMaybeGCHandle maybeHandle)
+            {
+                maybeException = maybeHandle;
+            }
+            // Creates an FFIMaybeException from the given Exception.
+            internal static FFIMaybeException FromException(Exception ex)
             {
                 var handle = GCHandle.Alloc(ex);
-                IntPtr handlePtr = GCHandle.ToIntPtr(handle);
-                return new FFIException
-                {
-                    exception = handlePtr
-                };
+                return new(new FFIMaybeGCHandle(handle));
             }
 
-            // Creates an FFIException representing no exception.
-            internal static FFIException Ok()
+            // Creates an FFIMaybeException representing no exception.
+            internal static FFIMaybeException Ok()
             {
-                return new FFIException
-                {
-                    exception = IntPtr.Zero
-                };
+                return new(FFIMaybeGCHandle.Empty());
             }
 
-            internal bool HasException => exception != IntPtr.Zero;
+            internal readonly bool HasException => !maybeException.IsEmpty();
         }
 
         /// <summary>
-        /// Throws the exception contained in the FFIException if any.
+        /// Throws the exception contained in the FFIMaybeException if any.
         /// This mustn't be used in UnmanagedCallersOnly methods because throwing exceptions
         /// across FFI boundary is UB.
         /// </summary>
-        internal static void ThrowIfException(ref FFIException res)
+        internal static void ThrowIfException(ref FFIMaybeException res)
         {
-            if (res.exception == IntPtr.Zero)
+            if (!res.HasException)
             {
                 return;
             }
 
             Exception exception;
-            var exHandle = GCHandle.FromIntPtr(res.exception);
+            var exHandle = GCHandle.FromIntPtr(res.maybeException.gchandle);
             try
             {
                 if (exHandle.Target is Exception ex)
@@ -712,7 +794,7 @@ namespace Cassandra
                     exHandle.Free();
                 }
                 // Zero out the pointer to avoid double free if caller invokes FreeIfPresent
-                res.exception = IntPtr.Zero;
+                res.maybeException = FFIMaybeGCHandle.Empty();
             }
             throw exception;
         }
@@ -721,13 +803,13 @@ namespace Cassandra
         /// Frees the exception handle contained in the package without throwing.
         /// Safe to call multiple times; subsequent calls become no-ops.
         /// </summary>
-        internal static void FreeExceptionHandle(ref FFIException res)
+        internal static void FreeExceptionHandle(ref FFIMaybeException res)
         {
-            if (res.exception == IntPtr.Zero)
+            if (!res.HasException)
             {
                 return;
             }
-            var exHandle = GCHandle.FromIntPtr(res.exception);
+            var exHandle = GCHandle.FromIntPtr(res.maybeException.gchandle);
             try
             {
                 if (exHandle.IsAllocated)
@@ -737,7 +819,7 @@ namespace Cassandra
             }
             finally
             {
-                res.exception = IntPtr.Zero;
+                res.maybeException = FFIMaybeGCHandle.Empty();
             }
         }
     }

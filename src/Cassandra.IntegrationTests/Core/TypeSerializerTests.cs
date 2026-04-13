@@ -41,9 +41,7 @@ namespace Cassandra.IntegrationTests.Core
         public TypeSerializersTests() : base(1, true)
         {
         }
-
-        // Re-add once Session.UserDefinedTypes is set in Session and can be used in tests
-        // private static long vectorSchemaSetUp = 0;
+        private static long vectorSchemaSetUp = 0;
 
         private static IEnumerable VectorTestCaseData()
         {
@@ -104,12 +102,11 @@ namespace Cassandra.IntegrationTests.Core
                     new TestCaseData("tuple<varint,int>", (Func<Tuple<BigInteger, int>>)(()=>new Tuple<BigInteger, int>(new BigInteger((long)r.NextDouble()), r.Next())), defaultAssert),
                     new TestCaseData("tuple<varint,varint>", (Func<Tuple<BigInteger, BigInteger>>)(()=>new Tuple<BigInteger, BigInteger>(new BigInteger((long)r.NextDouble()), new BigInteger((long)r.NextDouble()))), defaultAssert),
 
-                    // Re-add once Session.UserDefinedTypes is set in Session and can be used in tests
-                    // new TestCaseData("fixed_type", (Func<FixedType>)(()=>new FixedType { a = r.Next(), b = r.Next()}), defaultAssert),
-                    // new TestCaseData("mixed_type_one", (Func<MixedTypeOne>)(()=>new MixedTypeOne { a = r.Next(), b = (long)r.NextDouble()}), defaultAssert),
-                    // new TestCaseData("mixed_type_two", (Func<MixedTypeTwo>)(()=>new MixedTypeTwo { a = (long)r.NextDouble(), b = r.Next()}), defaultAssert),
-                    // new TestCaseData("var_type", (Func<VarType>)(()=>new VarType { a = (long)r.NextDouble(), b = (long)r.NextDouble()}), defaultAssert),
-                    // new TestCaseData("complex_vector_udt", (Func<ComplexVectorUdt>)(()=>new ComplexVectorUdt { a = new CqlVector<int>(r.Next(), r.Next(), r.Next()), b = new CqlVector<BigInteger>(r.Next(), r.Next(), r.Next())}), defaultAssert),
+                    new TestCaseData("fixed_type", (Func<FixedType>)(()=>new FixedType { a = r.Next(), b = r.Next()}), defaultAssert),
+                    new TestCaseData("mixed_type_one", (Func<MixedTypeOne>)(()=>new MixedTypeOne { a = r.Next(), b = (long)r.NextDouble()}), defaultAssert),
+                    new TestCaseData("mixed_type_two", (Func<MixedTypeTwo>)(()=>new MixedTypeTwo { a = (long)r.NextDouble(), b = r.Next()}), defaultAssert),
+                    new TestCaseData("var_type", (Func<VarType>)(()=>new VarType { a = (long)r.NextDouble(), b = (long)r.NextDouble()}), defaultAssert),
+                    new TestCaseData("complex_vector_udt", (Func<ComplexVectorUdt>)(()=>new ComplexVectorUdt { a = new CqlVector<int>(r.Next(), r.Next(), r.Next()), b = new CqlVector<BigInteger>(r.Next(), r.Next(), r.Next())}), defaultAssert),
                 };
         }
 
@@ -352,21 +349,20 @@ namespace Cassandra.IntegrationTests.Core
 
         private void SetupVectorUdtSchema()
         {
-            // Re-add once Session.UserDefinedTypes is set in Session and can be used in tests
-            // if (Interlocked.CompareExchange(ref vectorSchemaSetUp, 1, 0) == 0)
-            // {
-            //     Session.Execute("create type if not exists fixed_type (a int, b int)");
-            //     Session.Execute("create type if not exists mixed_type_one (a int, b varint)");
-            //     Session.Execute("create type if not exists mixed_type_two (a varint, b int)");
-            //     Session.Execute("create type if not exists var_type (a varint, b varint)");
-            //     Session.Execute("create type if not exists complex_vector_udt (a vector<int, 3>, b vector<varint, 3>)");
-            // }
-            // Session.UserDefinedTypes.Define(
-            //     UdtMap.For<FixedType>("fixed_type"),
-            //     UdtMap.For<MixedTypeOne>("mixed_type_one"),
-            //     UdtMap.For<MixedTypeTwo>("mixed_type_two"),
-            //     UdtMap.For<VarType>("var_type"),
-            //     UdtMap.For<ComplexVectorUdt>("complex_vector_udt"));
+            if (Interlocked.CompareExchange(ref vectorSchemaSetUp, 1, 0) == 0)
+            {
+                Session.Execute("create type if not exists fixed_type (a int, b int)");
+                Session.Execute("create type if not exists mixed_type_one (a int, b varint)");
+                Session.Execute("create type if not exists mixed_type_two (a varint, b int)");
+                Session.Execute("create type if not exists var_type (a varint, b varint)");
+                Session.Execute("create type if not exists complex_vector_udt (a vector<int, 3>, b vector<varint, 3>)");
+            }
+            Session.UserDefinedTypes.Define(
+                UdtMap.For<FixedType>("fixed_type"),
+                UdtMap.For<MixedTypeOne>("mixed_type_one"),
+                UdtMap.For<MixedTypeTwo>("mixed_type_two"),
+                UdtMap.For<VarType>("var_type"),
+                UdtMap.For<ComplexVectorUdt>("complex_vector_udt"));
         }
 
         public class FixedType

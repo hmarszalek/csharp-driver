@@ -413,6 +413,95 @@ pub extern "C" fn cluster_state_get_table_names(
     }
 }
 
+/// Opaque type representing the C# UdtContext.
+enum UdtContext {}
+
+/// Transparent wrapper around a pointer to the C# UdtContext.
+#[derive(Clone, Copy)]
+#[repr(transparent)]
+pub struct UdtContextPtr<'udt>(FFIPtr<'udt, UdtContext>);
+
+/// Callback type for constructing one UDT field in C#.
+type ConstructCSharpUdtField = unsafe extern "C" fn(
+    udt_context_ptr: UdtContextPtr<'_>,
+    field_name: FFIStr<'_>,
+    type_code: u8,
+    type_info: BridgedBorrowedSharedPtr<'_, ColumnType<'_>>,
+) -> FFIMaybeException;
+
+/// Callback type for finalizing a UDT metadata object in C#.
+type ConstructCSharpUdtMetadata = unsafe extern "C" fn(
+    udt_context_ptr: UdtContextPtr<'_>,
+    udt_name: FFIStr<'_>,
+) -> FFIMaybeException;
+
+/// Retrieves metadata for a single UDT and exposes it to C# via callbacks.
+#[unsafe(no_mangle)]
+pub extern "C" fn cluster_state_get_udt_metadata(
+    cluster_state_ptr: BridgedBorrowedSharedPtr<'_, ClusterState>,
+    keyspace_name: CSharpStr<'_>,
+    udt_name: CSharpStr<'_>,
+    construct_udt_field: ConstructCSharpUdtField,
+    udt_context_ptr: UdtContextPtr<'_>,
+    construct_udt_metadata: ConstructCSharpUdtMetadata,
+    constructors: &'static ExceptionConstructors,
+) -> FFIMaybeException {
+    tracing::trace!("[FFI] cluster_state_get_udt_metadata called");
+
+    let cluster_state =
+        ArcFFI::as_ref(cluster_state_ptr).expect("valid and non-null ClusterState pointer");
+
+    let keyspace_name = keyspace_name
+        .as_cstr()
+        .expect("valid C string for keyspace_name")
+        .to_str()
+        .expect("valid UTF-8 keyspace name");
+
+    let udt_name = udt_name
+        .as_cstr()
+        .expect("valid C string for udt_name")
+        .to_str()
+        .expect("valid UTF-8 UDT name");
+
+    let Some(keyspace) = cluster_state.get_keyspace(keyspace_name) else {
+        let ex = constructors
+            .invalid_argument_exception_constructor
+            .construct_from_rust("Keyspace not found in cluster metadata");
+        return FFIMaybeException::from_exception(ex);
+    };
+
+    let Some(udt) = keyspace.user_defined_types.get(udt_name) else {
+        let ex = constructors
+            .invalid_argument_exception_constructor
+            .construct_from_rust("UDT not found in keyspace metadata");
+        return FFIMaybeException::from_exception(ex);
+    };
+
+    for (field_name, field_type) in udt.field_types.iter() {
+        let type_code = column_type_to_code(field_type);
+        let type_info_handle: BridgedBorrowedSharedPtr<ColumnType> = if type_code >= 0x20 {
+            RefFFI::as_ptr(field_type)
+        } else {
+            RefFFI::null()
+        };
+
+        let maybe_ffi_exception = unsafe {
+            construct_udt_field(
+                udt_context_ptr,
+                FFIStr::new(field_name.as_ref()),
+                type_code,
+                type_info_handle,
+            )
+        };
+
+        if maybe_ffi_exception.has_exception() {
+            return maybe_ffi_exception;
+        }
+    }
+
+    unsafe { construct_udt_metadata(udt_context_ptr, FFIStr::new(udt.name.as_ref())) }
+}
+
 enum TableColumns {}
 
 #[repr(transparent)]

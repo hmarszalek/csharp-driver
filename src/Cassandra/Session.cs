@@ -33,6 +33,7 @@ namespace Cassandra
     public class Session : ISession
     {
         private readonly BridgedSession bridgedSession;
+        private readonly ISerializerManager _serializerManager;
         private static readonly Logger Logger = new Logger(typeof(Session));
         private readonly ICluster _cluster;
         private int _disposed;
@@ -69,22 +70,26 @@ namespace Cassandra
 
         private Session(
             ICluster cluster,
-            RustBridge.ManuallyDestructible mdSession)
+            RustBridge.ManuallyDestructible mdSession,
+            ISerializerManager serializerManager)
         {
             _cluster = cluster;
             Configuration = cluster.Configuration;
             bridgedSession = new BridgedSession(mdSession);
+            _serializerManager = serializerManager;
+            UserDefinedTypes = new UdtMappingDefinitions(this, _serializerManager);
         }
 
         static internal async Task<ISession> CreateAsync(
             ICluster cluster,
             string contactPointUris,
-            string keyspace)
+            string keyspace,
+            ISerializerManager serializerManager)
         {
             Task<RustBridge.ManuallyDestructible> mdSessionTask = BridgedSession.Create(contactPointUris, keyspace, cluster.Configuration.SocketOptions);
 
             RustBridge.ManuallyDestructible mdSession = await mdSessionTask.ConfigureAwait(false);
-            var session = new Session(cluster, mdSession);
+            var session = new Session(cluster, mdSession, serializerManager);
             return session;
         }
 
@@ -261,9 +266,11 @@ namespace Cassandra
                     }
                     else
                     {
+                        var serializer = _serializerManager.GetCurrentSerializer();
                         task = bridgedSession.QueryWithValues(
                             queryString,
-                            queryValues
+                            queryValues,
+                            serializer
                         );
                     }
 
@@ -272,7 +279,7 @@ namespace Cassandra
                         // Use GetAwaiter().GetResult() to unwrap AggregateException
                         // and throw the inner exception directly, avoiding double-wrapping.
                         RustBridge.ManuallyDestructible mdRowSet = t.GetAwaiter().GetResult();
-                        var rowSet = new RowSet(mdRowSet);
+                        var rowSet = new RowSet(mdRowSet, _serializerManager);
 
                         return rowSet;
                     }, TaskContinuationOptions.ExecuteSynchronously);
@@ -295,9 +302,11 @@ namespace Cassandra
                     }
                     else
                     {
+                        var serializer = _serializerManager.GetCurrentSerializer();
                         boundTask = bridgedSession.QueryBoundWithValues(
                             queryPrepared,
-                            queryValuesBound
+                            queryValuesBound,
+                            serializer
                         );
                     }
 
@@ -306,7 +315,7 @@ namespace Cassandra
                         // Use GetAwaiter().GetResult() to unwrap AggregateException
                         // and throw the inner exception directly, avoiding double-wrapping.
                         RustBridge.ManuallyDestructible mdRowSet = t.GetAwaiter().GetResult();
-                        return new RowSet(mdRowSet);
+                        return new RowSet(mdRowSet, _serializerManager);
                     }, TaskContinuationOptions.ExecuteSynchronously);
 
                 case BatchStatement s:
@@ -391,7 +400,7 @@ namespace Cassandra
                 // Use GetAwaiter().GetResult() to unwrap AggregateException
                 // and throw the inner exception directly, avoiding double-wrapping.
                 RustBridge.ManuallyDestructible mdPreparedStatement = t.GetAwaiter().GetResult();
-                var ps = new PreparedStatement(mdPreparedStatement, cqlQuery);
+                var ps = new PreparedStatement(mdPreparedStatement, cqlQuery, _serializerManager);
                 return ps;
             }, TaskContinuationOptions.ExecuteSynchronously);
         }

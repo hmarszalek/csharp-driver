@@ -120,13 +120,14 @@ namespace Cassandra
         }
 
         // For use by the Rust interop code.
-        internal PreparedStatement(RustBridge.ManuallyDestructible mdPreparedStatement, string cql)
+        internal PreparedStatement(RustBridge.ManuallyDestructible mdPreparedStatement, string cql, ISerializerManager serializerManager)
         {
             bridgedPreparedStatement = new BridgedPreparedStatement(mdPreparedStatement);
             bool isLwt = bridgedPreparedStatement.IsLwt();
             _variablesMetadata = bridgedPreparedStatement.ExtractVariablesMetadataFromRust();
             Cql = cql;
             _isLwt = isLwt;
+            _serializerManager = serializerManager;
         }
 
         /// <summary>

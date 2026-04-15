@@ -2,6 +2,7 @@ using System;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Threading.Tasks;
+using Cassandra.Serialization;
 using static Cassandra.RustBridge;
 
 namespace Cassandra
@@ -116,9 +117,10 @@ namespace Cassandra
         /// </summary>
         /// <param name="statement">CQL statement to be executed on the session.</param>
         /// <param name="queryValues">Values to be serialized and bound to the query.</param>
-        internal Task<ManuallyDestructible> QueryWithValues(string statement, object[] queryValues)
+        /// <param name="serializer">Serializer to use for serializing the values.</param>
+        internal Task<ManuallyDestructible> QueryWithValues(string statement, object[] queryValues, ISerializer serializer)
         {
-            IntPtr valuesPtr = SerializationHandler.InitializeSerializedValues(queryValues).TakeNativeHandle();
+            IntPtr valuesPtr = SerializationHandler.InitializeSerializedValues(queryValues, serializer).TakeNativeHandle();
             return RunAsyncWithIncrement<ManuallyDestructible>((tcb, ptr) => session_query_with_values(tcb, ptr, statement, valuesPtr));
         }
 
@@ -145,9 +147,10 @@ namespace Cassandra
         /// </summary>
         /// <param name="preparedStatement">Pointer to the prepared statement handle.</param>
         /// <param name="queryValues">Values to be serialized and bound to the prepared statement.</param>
-        internal Task<ManuallyDestructible> QueryBoundWithValues(IntPtr preparedStatement, object[] queryValues)
+        /// <param name="serializer">Serializer to use for serializing the values.</param>
+        internal Task<ManuallyDestructible> QueryBoundWithValues(IntPtr preparedStatement, object[] queryValues, ISerializer serializer)
         {
-            IntPtr valuesPtr = SerializationHandler.InitializeSerializedValues(queryValues).TakeNativeHandle();
+            IntPtr valuesPtr = SerializationHandler.InitializeSerializedValues(queryValues, serializer).TakeNativeHandle();
             return RunAsyncWithIncrement<ManuallyDestructible>((tcb, ptr) => session_query_bound_with_values(tcb, ptr, preparedStatement, valuesPtr));
         }
 

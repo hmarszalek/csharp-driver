@@ -88,15 +88,12 @@ namespace Cassandra
                 //identifiers are lower cased in Cassandra
                 caseSensitiveUdtName = caseSensitiveUdtName.ToLowerInvariant();
             }
-
-            // FIXME: Implement UDT metadata fetching from Rust driver.
-            // var udtDefinition = await _cluster.Metadata.GetUdtDefinitionAsync(keyspace, caseSensitiveUdtName).ConfigureAwait(false);
-            // if (udtDefinition == null)
-            // {
-            // throw new InvalidTypeException($"{caseSensitiveUdtName} UDT not found on keyspace {keyspace}");
-            // }
-            // return udtDefinition;
-            throw new NotImplementedException("GetDefinitionAsync is not yet implemented"); // FIXME: bridge with Rust UDT metadata fetching.
+            var udtDefinition = _session.Cluster.Metadata.GetUdtDefinition(keyspace, caseSensitiveUdtName);
+            if (udtDefinition == null)
+            {
+                throw new InvalidTypeException($"{caseSensitiveUdtName} UDT not found on keyspace {keyspace}");
+            }
+            return Task.FromResult(udtDefinition);
         }
 
         internal UdtMap GetUdtMap<T>(string keyspace)

@@ -43,6 +43,7 @@ namespace Cassandra
 
         private readonly Metadata _metadata;
         private readonly IEnumerable<string> _contactPoints;
+        private readonly ISerializerManager _serializerManager;
 
         // Disable unused event warnings, because they are part of the public API, so we can't remove them.
 #pragma warning disable CS0067
@@ -144,6 +145,10 @@ namespace Cassandra
             {
                 protocolVersion = Configuration.ProtocolOptions.MaxProtocolVersionValue.Value;
             }
+            _serializerManager = new SerializerManager(
+                protocolVersion,
+                Configuration.Policies.ColumnEncryptionPolicy,
+                Configuration.TypeSerializers);
             _contactPoints = configuration.ParseContactPoints(contactPoints);
         }
 
@@ -204,7 +209,7 @@ namespace Cassandra
             // and then split on the Rust side).
             string firstContactPoint = _contactPoints.First();
 
-            var session = await Session.CreateAsync(this, firstContactPoint, keyspace).ConfigureAwait(false);
+            var session = await Session.CreateAsync(this, firstContactPoint, keyspace, _serializerManager).ConfigureAwait(false);
 
             _connectedSessions.Add(session);
             Logger.Info("Session connected ({0})", session.GetHashCode());

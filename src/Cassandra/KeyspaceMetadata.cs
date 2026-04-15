@@ -228,15 +228,7 @@ namespace Cassandra
         /// </summary>
         internal UdtColumnInfo GetUdtDefinition(string typeName)
         {
-            throw new NotImplementedException("TODO: implement UdtMetadata");
-        }
-
-        /// <summary>
-        /// Gets the definition of a User defined type asynchronously
-        /// </summary>
-        internal Task<UdtColumnInfo> GetUdtDefinitionAsync(string typeName)
-        {
-            throw new NotImplementedException("TODO: implement UdtMetadata");
+            return _clusterState.GetUdtMetadata(Name, typeName);
         }
 
         /// <summary>

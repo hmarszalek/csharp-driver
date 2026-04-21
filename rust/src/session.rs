@@ -11,7 +11,7 @@ use tokio::sync::RwLock;
 use crate::error_conversion::{FFIMaybeException, MaybeShutdownError};
 use crate::ffi::{
     ArcFFI, BridgedBorrowedSharedPtr, BridgedOwnedSharedPtr, CSharpManagedStringPtr, CSharpStr,
-    FFI, FFIStr, FromArc, WriteStringCallback,
+    FFI, FFIBool, FFIStr, FromArc, WriteStringCallback,
 };
 use crate::pre_serialized_values::{PopulateValues, PopulateValuesContext, PreSerializedValues};
 use crate::prepared_statement::BridgedPreparedStatement;
@@ -25,6 +25,15 @@ use crate::task::{BridgedFuture, ExceptionConstructors, ManuallyDestructible, Tc
 #[derive(Debug)]
 pub(crate) struct BridgedSessionInner {
     session: Option<Session>,
+}
+
+/// Execution options for bound statements mirrored with the managed FFI struct.
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+pub struct BoundStatementExecutionOptions {
+    pub consistency_level: u16,
+    pub has_consistency_level: FFIBool,
+    pub is_idempotent: FFIBool,
 }
 
 /// BridgedSession is a thread-safe, asynchronously accessible session wrapper.
@@ -284,6 +293,7 @@ pub extern "C" fn session_query_bound(
     tcb: Tcb<ManuallyDestructible>,
     session_ptr: BridgedBorrowedSharedPtr<'_, BridgedSession>,
     prepared_statement_ptr: BridgedBorrowedSharedPtr<'_, BridgedPreparedStatement>,
+    execution_options: BoundStatementExecutionOptions,
 ) {
     let bridged_prepared = ArcFFI::as_ref(prepared_statement_ptr).unwrap();
     let session_arc = ArcFFI::cloned_from_ptr(session_ptr).unwrap();
@@ -295,7 +305,8 @@ pub extern "C" fn session_query_bound(
     let session_guard_res = session_arc.try_read_owned();
 
     // Clone the prepared statement to move it into the async task.
-    let prepared_statement = bridged_prepared
+    // On the cloned prepared statement, set the execution options (consistency level and idempotence) before executing.
+    let mut prepared_statement = bridged_prepared
         .inner
         .read()
         .expect("poisoning impossible due to process-aborting panics")
@@ -314,6 +325,27 @@ pub extern "C" fn session_query_bound(
         let Some(session) = session_guard.session.as_ref() else {
             return Err(MaybeShutdownError::AlreadyShutdown);
         };
+
+        // If consistency level was provided, apply it to the prepared statement. Otherwise, if consistency level
+        // was not provided, ensure it's unset on the prepared statement so it uses the default (between creating
+        // this bound statement and executing it someone could set a consistency level on the prepared statement).
+        // NOTE: logic used here for applying consistency level is complicated and for now there is no tests covering it.
+        if bool::from(execution_options.has_consistency_level) {
+            let consistency = execution_options
+                .consistency_level
+                .try_into()
+                .map_err(|err| {
+                    MaybeShutdownError::InvalidArgument(format!(
+                        "Invalid consistency level value {0} passed from C# for bound query: {1}",
+                        execution_options.consistency_level, err
+                    ))
+                })?;
+            prepared_statement.set_consistency(consistency);
+        } else {
+            prepared_statement.unset_consistency();
+        }
+
+        prepared_statement.set_is_idempotent(bool::from(execution_options.is_idempotent));
 
         // Lock is held for the entire duration of the query operation,
         // preventing shutdown until this future completes
@@ -339,6 +371,7 @@ pub extern "C" fn session_query_bound_with_values(
     prepared_statement_ptr: BridgedBorrowedSharedPtr<'_, BridgedPreparedStatement>,
     populate_values_context: PopulateValuesContext<'_>,
     populate_values: PopulateValues,
+    execution_options: BoundStatementExecutionOptions,
 ) {
     let psv =
         match PreSerializedValues::from_populate_callback(populate_values_context, populate_values)
@@ -360,7 +393,8 @@ pub extern "C" fn session_query_bound_with_values(
     let session_guard_res = session_arc.try_read_owned();
 
     // Clone the prepared statement to move it into the async task.
-    let prepared_statement = bridged_prepared
+    // On the cloned prepared statement, set the execution options (consistency level and idempotence) before executing.
+    let mut prepared_statement = bridged_prepared
         .inner
         .read()
         .expect("poisoning impossible due to process-aborting panics")
@@ -379,6 +413,28 @@ pub extern "C" fn session_query_bound_with_values(
         let Some(session) = session_guard.session.as_ref() else {
             return Err(MaybeShutdownError::AlreadyShutdown);
         };
+
+        // If consistency level was provided, apply it to the prepared statement. Otherwise, if consistency level
+        // was not provided, ensure it's unset on the prepared statement so it uses the default (between creating
+        // this bound statement and executing it someone could set a consistency level on the prepared statement).
+        // NOTE: logic used here for applying consistency level is complicated and for now there is no tests covering it.
+        if bool::from(execution_options.has_consistency_level) {
+            let consistency = execution_options
+                .consistency_level
+                .try_into()
+                .map_err(|err| {
+                    MaybeShutdownError::InvalidArgument(format!(
+                        "Invalid consistency level value {0} passed from C# for bound query with values: {1}",
+                        execution_options.consistency_level,
+                        err
+                    ))
+                })?;
+            prepared_statement.set_consistency(consistency);
+        } else {
+            prepared_statement.unset_consistency();
+        }
+
+        prepared_statement.set_is_idempotent(bool::from(execution_options.is_idempotent));
 
         // Convert our FFI wrapper into SerializedValues by consuming it.
         let serialized_values: SerializedValues = psv.into_serialized_values();

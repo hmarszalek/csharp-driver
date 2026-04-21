@@ -55,10 +55,19 @@ namespace Cassandra
         unsafe private static extern void session_prepare(Tcb<ManuallyDestructible> tcb, IntPtr session, [MarshalAs(UnmanagedType.LPUTF8Str)] string statement);
 
         [DllImport("csharp_wrapper", CallingConvention = CallingConvention.Cdecl)]
-        unsafe private static extern void session_query_bound(Tcb<ManuallyDestructible> tcb, IntPtr session, IntPtr preparedStatement);
+        unsafe private static extern void session_query_bound(
+            Tcb<ManuallyDestructible> tcb,
+            IntPtr session,
+            IntPtr preparedStatement,
+            PreparedStatementExecutionOptions executionOptions);
 
         [DllImport("csharp_wrapper", CallingConvention = CallingConvention.Cdecl)]
-        unsafe private static extern void session_query_bound_with_values(Tcb<ManuallyDestructible> tcb, IntPtr session, IntPtr preparedStatement, IntPtr populateValuesContext, IntPtr populateValuesCallback);
+        unsafe private static extern void session_query_bound_with_values(
+            Tcb<ManuallyDestructible> tcb,
+            IntPtr session,
+            IntPtr preparedStatement,
+            IntPtr populateValuesContext, IntPtr populateValuesCallback,
+            PreparedStatementExecutionOptions executionOptions);
 
         [DllImport("csharp_wrapper", CallingConvention = CallingConvention.Cdecl)]
         unsafe private static extern FFIMaybeException session_get_keyspace(IntPtr session, IntPtr writeToStr, IntPtr context, IntPtr constructorsPtr);
@@ -142,9 +151,25 @@ namespace Cassandra
         /// Executes a prepared statement with bound values.
         /// </summary>
         /// <param name="preparedStatement">Pointer to the prepared statement handle.</param>
-        internal Task<ManuallyDestructible> QueryBound(IntPtr preparedStatement)
+        /// <param name="hasConsistencyLevel">Whether a consistency level override was specified.</param>
+        /// <param name="consistencyLevel">Consistency level to use for the query.</param>
+        /// <param name="isIdempotent">Indicates whether the query is idempotent.</param>
+        internal Task<ManuallyDestructible> QueryBound(
+            IntPtr preparedStatement,
+            bool hasConsistencyLevel,
+            ushort consistencyLevel,
+            bool isIdempotent)
         {
-            return RunAsyncWithIncrement<ManuallyDestructible>((tcb, ptr) => session_query_bound(tcb, ptr, preparedStatement));
+            var executionOptions = new PreparedStatementExecutionOptions(
+                hasConsistencyLevel,
+                consistencyLevel,
+                isIdempotent);
+
+            return RunAsyncWithIncrement<ManuallyDestructible>((tcb, ptr) => session_query_bound(
+                tcb,
+                ptr,
+                preparedStatement,
+                executionOptions));
         }
 
         /// <summary>
@@ -153,15 +178,31 @@ namespace Cassandra
         /// <param name="preparedStatement">Pointer to the prepared statement handle.</param>
         /// <param name="queryValues">Values to be serialized on demand and bound to the prepared statement.</param>
         /// <param name="serializer">Serializer to use for converting CLR values to CQL bytes.</param>
-        internal unsafe Task<ManuallyDestructible> QueryBoundWithValues(IntPtr preparedStatement, object[] queryValues, ISerializer serializer)
+        /// <param name="hasConsistencyLevel">Whether a consistency level override was specified.</param>
+        /// <param name="consistencyLevel">Consistency level to use for the query.</param>
+        /// <param name="isIdempotent">Indicates whether the query is idempotent.</param>
+        internal unsafe Task<ManuallyDestructible> QueryBoundWithValues(
+            IntPtr preparedStatement,
+            object[] queryValues,
+            ISerializer serializer,
+            bool hasConsistencyLevel,
+            ushort consistencyLevel,
+            bool isIdempotent)
         {
             var populateCtx = SerializationHandler.CreateContext(queryValues, serializer);
             var ctxIntPtr = (IntPtr)Unsafe.AsPointer(ref populateCtx);
+
+            var executionOptions = new PreparedStatementExecutionOptions(
+                hasConsistencyLevel,
+                consistencyLevel,
+                isIdempotent);
+
             var task = RunAsyncWithIncrement<ManuallyDestructible>((tcb, ptr) =>
                 session_query_bound_with_values(
                     tcb, ptr, preparedStatement,
                     ctxIntPtr,
-                    (IntPtr)SerializationHandler.PopulateValuesPtr));
+                    (IntPtr)SerializationHandler.PopulateValuesPtr,
+                    executionOptions));
             GC.KeepAlive(populateCtx);
             return task;
         }
@@ -257,6 +298,28 @@ namespace Cassandra
                     connectTimeoutMillis = socketOptions?.ConnectTimeoutMillis ?? SocketOptions.DefaultConnectTimeoutMillis,
                     tcp = BridgedTcpConfig.BuildFrom(socketOptions),
                 };
+            }
+        }
+
+        /// <summary>
+        /// Execution options passed alongside a prepared statement.
+        /// Any changes to this struct must be mirrored in the Rust FFI definition.
+        /// </summary>
+        [StructLayout(LayoutKind.Sequential)]
+        private readonly struct PreparedStatementExecutionOptions
+        {
+            internal readonly ushort ConsistencyLevel;
+            internal readonly FFIBool HasConsistencyLevel;
+            internal readonly FFIBool IsIdempotent;
+
+            internal PreparedStatementExecutionOptions(
+                bool hasConsistencyLevel,
+                ushort consistencyLevel,
+                bool isIdempotent)
+            {
+                HasConsistencyLevel = hasConsistencyLevel;
+                ConsistencyLevel = consistencyLevel;
+                IsIdempotent = isIdempotent;
             }
         }
     }

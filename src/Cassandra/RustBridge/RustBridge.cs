@@ -692,7 +692,7 @@ namespace Cassandra
             /// Initializes the Rust driver components.
             /// This must be called early to ensure logging is properly initialized.
             /// </summary>
-            [DllImport("csharp_wrapper", CallingConvention = CallingConvention.Cdecl)]
+            [DllImport(NativeLibrary.CSharpWrapper, CallingConvention = CallingConvention.Cdecl)]
             private static extern void init_rust_logging();
 
             static Globals()

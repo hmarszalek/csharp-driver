@@ -317,6 +317,9 @@ pub(crate) enum MaybeShutdownError<E> {
 
     #[error("Session has been shut down and can no longer execute operations")]
     AlreadyShutdown,
+
+    #[error("Invalid argument: {0}")]
+    InvalidArgument(String),
 }
 
 /// Trait for converting Rust error types into pointers to C# exceptions using constructors from the TCB.
@@ -692,6 +695,9 @@ where
                 .construct_from_rust(
                     "Session has been shut down and can no longer execute operations",
                 ),
+            MaybeShutdownError::InvalidArgument(msg) => ctors
+                .invalid_argument_exception_constructor
+                .construct_from_rust(&msg),
         }
     }
 }

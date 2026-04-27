@@ -13,20 +13,6 @@ impl FFI for BridgedPreparedStatement {
     type Origin = FromArc;
 }
 
-#[unsafe(no_mangle)]
-pub extern "C" fn prepared_statement_is_lwt(
-    prepared_statement_ptr: BridgedBorrowedSharedPtr<'_, BridgedPreparedStatement>,
-    is_lwt: *mut bool,
-) -> FFIMaybeException {
-    unsafe {
-        *is_lwt = ArcFFI::as_ref(prepared_statement_ptr)
-            .unwrap()
-            .inner
-            .is_confirmed_lwt();
-    }
-    FFIMaybeException::ok()
-}
-
 /// Gets the number of variable column specifications in the prepared statement.
 #[unsafe(no_mangle)]
 pub extern "C" fn prepared_statement_get_variables_column_specs_count(
@@ -117,6 +103,20 @@ pub extern "C" fn prepared_statement_fill_column_specs_metadata(
                 return ffi_exception;
             }
         }
+    }
+    FFIMaybeException::ok()
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn prepared_statement_is_lwt(
+    prepared_statement_ptr: BridgedBorrowedSharedPtr<'_, BridgedPreparedStatement>,
+    is_lwt: *mut bool,
+) -> FFIMaybeException {
+    unsafe {
+        *is_lwt = ArcFFI::as_ref(prepared_statement_ptr)
+            .unwrap()
+            .inner
+            .is_confirmed_lwt();
     }
     FFIMaybeException::ok()
 }

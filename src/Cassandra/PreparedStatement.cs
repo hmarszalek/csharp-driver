@@ -107,10 +107,9 @@ namespace Cassandra
         internal PreparedStatement(RustBridge.ManuallyDestructible mdPreparedStatement, string cql, ISerializerManager serializerManager)
         {
             bridgedPreparedStatement = new BridgedPreparedStatement(mdPreparedStatement);
-            bool isLwt = bridgedPreparedStatement.IsLwt();
             _variablesMetadata = bridgedPreparedStatement.ExtractVariablesMetadataFromRust();
             Cql = cql;
-            _isLwt = isLwt;
+            _isLwt = bridgedPreparedStatement.IsLwt();
             _serializerManager = serializerManager;
         }
 

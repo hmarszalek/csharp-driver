@@ -40,11 +40,11 @@ enum Columns {}
 
 #[repr(transparent)]
 #[derive(Clone, Copy)]
-pub struct ColumnsPtr(FFIPtr<'static, Columns>);
+pub struct ColumnsPtr<'a>(FFIPtr<'a, Columns>);
 
 // Function pointer type for setting column specs metadata in C#.
 type SetPreparedStatementVariablesMetadata = unsafe extern "C" fn(
-    columns_ptr: ColumnsPtr,
+    columns_ptr: ColumnsPtr<'_>,
     value_index: usize,
     name: FFIStr<'_>,
     keyspace: FFIStr<'_>,
@@ -62,7 +62,7 @@ type SetPreparedStatementVariablesMetadata = unsafe extern "C" fn(
 #[unsafe(no_mangle)]
 pub extern "C" fn prepared_statement_fill_column_specs_metadata(
     prepared_statement_ptr: BridgedBorrowedSharedPtr<'_, BridgedPreparedStatement>,
-    columns_ptr: ColumnsPtr,
+    columns_ptr: ColumnsPtr<'_>,
     set_prepared_statement_variables_metadata: SetPreparedStatementVariablesMetadata,
 ) -> FFIMaybeException {
     let prepared_statement = ArcFFI::as_ref(prepared_statement_ptr)

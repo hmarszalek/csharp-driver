@@ -50,11 +50,6 @@ namespace Cassandra
         internal byte[] Id { get; private set; }
 
         /// <summary>
-        /// The keyspace were the prepared statement was first executed
-        /// </summary>
-        internal string Keyspace { get; private set; }
-
-        /// <summary>
         /// Gets the the incoming payload, that is, the payload that the server
         /// sent back with its prepared response, or null if the server did not include any custom payload.
         /// </summary>
@@ -93,7 +88,12 @@ namespace Cassandra
         /// <summary>
         /// Gets the default consistency level for all executions using this instance
         /// </summary>
-        public ConsistencyLevel? ConsistencyLevel { get; private set; }
+        public ConsistencyLevel? ConsistencyLevel
+        {
+            get => bridgedPreparedStatement.GetConsistencyLevel();
+        }
+
+        private volatile bool _hasIdempotence = false;
 
         /// <summary>
         /// Determines if the query is idempotent, i.e. whether it can be applied multiple times without 
@@ -104,30 +104,40 @@ namespace Cassandra
         /// </para>
         /// When the property is null, the driver will use the default value from the <see cref="QueryOptions.GetDefaultIdempotence()"/>.
         /// </summary>
-        public bool? IsIdempotent { get; private set; }
+        public bool? IsIdempotent
+        {
+            get
+            {
+                if (!_hasIdempotence)
+                {
+                    return null;
+                }
+                return bridgedPreparedStatement.IsIdempotent();
+            }
+        }
 
         public bool IsLwt => _isLwt;
-
-        internal PreparedStatement(RowSetMetadata variablesMetadata, byte[] id, string cql,
-                                   string keyspace, ISerializerManager serializer, bool isLwt)
-        {
-            _variablesMetadata = variablesMetadata;
-            Id = id;
-            Cql = cql;
-            Keyspace = keyspace;
-            _serializerManager = serializer;
-            _isLwt = isLwt;
-        }
 
         // For use by the Rust interop code.
         internal PreparedStatement(RustBridge.ManuallyDestructible mdPreparedStatement, string cql, ISerializerManager serializerManager)
         {
             bridgedPreparedStatement = new BridgedPreparedStatement(mdPreparedStatement);
-            bool isLwt = bridgedPreparedStatement.IsLwt();
             _variablesMetadata = bridgedPreparedStatement.ExtractVariablesMetadataFromRust();
             Cql = cql;
-            _isLwt = isLwt;
+            _isLwt = bridgedPreparedStatement.IsLwt();
             _serializerManager = serializerManager;
+
+            // If the partition keys were parsed, set the routing indexes to them by default.
+            if (_variablesMetadata.PartitionKeys != null)
+            {
+                if (_variablesMetadata.PartitionKeys.Length == 0)
+                {
+                    // zero-length partition keys means that none of the parameters are partition keys
+                    // the partition key is hard-coded.
+                    return;
+                }
+                _routingIndexes = _variablesMetadata.PartitionKeys;
+            }
         }
 
         /// <summary>
@@ -191,7 +201,7 @@ namespace Cassandra
         /// <returns>this <c>PreparedStatement</c> object.</returns>
         public PreparedStatement SetConsistencyLevel(ConsistencyLevel consistency)
         {
-            ConsistencyLevel = consistency;
+            bridgedPreparedStatement.SetConsistencyLevel(consistency);
             return this;
         }
 
@@ -273,7 +283,8 @@ namespace Cassandra
         /// </summary>
         public PreparedStatement SetIdempotence(bool value)
         {
-            IsIdempotent = value;
+            _hasIdempotence = true;
+            bridgedPreparedStatement.SetIsIdempotent(value);
             return this;
         }
 

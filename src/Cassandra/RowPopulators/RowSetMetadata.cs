@@ -299,9 +299,31 @@ namespace Cassandra
         /// </summary>
         internal bool HasNewResultMetadataId() => NewResultMetadataId != null;
 
-        // for testing
-        internal RowSetMetadata()
+        /// Initializes a new instance of the RowSetMetadata class with the provided columns, partition keys,
+        /// keyspace and table information, and builds the column index mapping.
+        /// Used by the Rust bridge when extracting metadata from prepared statements, allowing for more detailed metadata information to be included.
+        internal RowSetMetadata(CqlColumn[] columns, int[] partitionKeys = null, string keyspace = null, string table = null)
         {
+            var columnLength = columns?.Length ?? 0;
+
+            Columns = columns;
+            ColumnIndexes = new Dictionary<string, int>(StringComparer.Ordinal);
+            PartitionKeys = partitionKeys;
+            if (columns != null)
+            {
+                for (var i = 0; i < columnLength; i++)
+                {
+                    var columnName = columns[i].Name;
+                    if (string.IsNullOrEmpty(columnName) || ColumnIndexes.ContainsKey(columnName))
+                    {
+                        continue;
+                    }
+                    ColumnIndexes.Add(columnName, i);
+                }
+            }
+
+            Keyspace = keyspace ?? (columnLength > 0 ? Columns[0].Keyspace : null);
+            Table = table ?? (columnLength > 0 ? Columns[0].Table : null);
         }
     }
 }

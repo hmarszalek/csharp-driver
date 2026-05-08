@@ -3,6 +3,7 @@ using System;
 using System.Runtime.InteropServices;
 using System.Runtime.CompilerServices;
 using static Cassandra.RustBridge;
+using System.Collections.Generic;
 
 namespace Cassandra
 {
@@ -16,20 +17,13 @@ namespace Cassandra
         {
         }
 
-        internal bool IsLwt()
-        {
-            FFIBool isLwt = false;
-            RunWithIncrement(handle => prepared_statement_is_lwt(handle, out isLwt));
-            return isLwt;
-        }
-
         internal RowSetMetadata ExtractVariablesMetadataFromRust()
         {
             // Query Rust for the number of variable column specs
             var count = GetVariablesColumnSpecsCount();
-            if (count <= 0)
+            if (count == 0)
             {
-                return new RowSetMetadata();
+                return new RowSetMetadata(Array.Empty<CqlColumn>());
             }
 
             var columns = new CqlColumn[count];
@@ -38,39 +32,132 @@ namespace Cassandra
                 columns[i] = new CqlColumn();
             }
 
+            var pkIndexes = new List<int>();
             unsafe
             {
-                void* columnsPtr = Unsafe.AsPointer(ref columns);
-                FillVariablesMetadata((IntPtr)columnsPtr, (IntPtr)setColumnMetaPtr);
+                RunWithIncrement(handle =>
+                    prepared_statement_fill_column_specs_metadata(
+                        handle,
+                        (IntPtr)Unsafe.AsPointer(ref columns),
+                        (IntPtr)setColumnMetaPtr,
+                        (IntPtr)Unsafe.AsPointer(ref pkIndexes),
+                        (IntPtr)AddPkIndexPtr
+                    )
+                );
             }
 
-            var metadata = new RowSetMetadata
-            {
-                Columns = columns
-            };
-
+            var metadata = new RowSetMetadata(columns, pkIndexes.ToArray());
             return metadata;
         }
 
-        [DllImport("csharp_wrapper", CallingConvention = CallingConvention.Cdecl)]
-        unsafe private static extern FFIMaybeException prepared_statement_is_lwt(IntPtr prepared_statement, out FFIBool isLwt);
+        internal bool IsLwt()
+        {
+            FFIBool isLwt = false;
+            unsafe
+            {
+                RunWithIncrement(handle => prepared_statement_is_lwt(handle, out isLwt));
+            }
+            return isLwt;
+        }
+
+        internal ConsistencyLevel? GetConsistencyLevel()
+        {
+            int clInt = -1;
+            unsafe
+            {
+                RunWithIncrement(handle => prepared_statement_get_consistency_level(
+                    handle,
+                    out clInt));
+            }
+
+            if (clInt < 0)
+            {
+                return null;
+            }
+
+            return (ConsistencyLevel)clInt;
+        }
+
+        internal void SetConsistencyLevel(ConsistencyLevel consistencyLevel)
+        {
+            unsafe
+            {
+                RunWithIncrement(handle =>
+                    prepared_statement_set_consistency_level(
+                        handle,
+                        (ushort)consistencyLevel,
+                        (IntPtr)Globals.ConstructorsPtr)
+                    );
+            }
+        }
+
+        internal bool IsIdempotent()
+        {
+            FFIBool isIdempotent = false;
+            unsafe
+            {
+                RunWithIncrement(handle => prepared_statement_get_is_idempotent(handle, out isIdempotent));
+            }
+            return isIdempotent;
+        }
+
+        internal void SetIsIdempotent(bool isIdempotent)
+        {
+            FFIBool ffiIsIdempotent = isIdempotent;
+            unsafe
+            {
+                RunWithIncrement(handle => prepared_statement_set_is_idempotent(handle, ffiIsIdempotent));
+            }
+        }
 
         [DllImport("csharp_wrapper", CallingConvention = CallingConvention.Cdecl)]
         unsafe private static extern FFIMaybeException prepared_statement_get_variables_column_specs_count(IntPtr prepared_statement, out nuint count);
 
         [DllImport("csharp_wrapper", CallingConvention = CallingConvention.Cdecl)]
-        unsafe private static extern FFIMaybeException prepared_statement_fill_column_specs_metadata(IntPtr prepared_statement, IntPtr columnsPtr, IntPtr metadataSetter);
+        unsafe private static extern FFIMaybeException prepared_statement_fill_column_specs_metadata(IntPtr prepared_statement, IntPtr columnsPtr, IntPtr metadataSetter, IntPtr pkIndexesPtr, IntPtr addPkIndex);
+
+        [DllImport("csharp_wrapper", CallingConvention = CallingConvention.Cdecl)]
+        unsafe private static extern FFIMaybeException prepared_statement_is_lwt(IntPtr prepared_statement, out FFIBool isLwt);
+
+        [DllImport("csharp_wrapper", CallingConvention = CallingConvention.Cdecl)]
+        unsafe private static extern FFIMaybeException prepared_statement_get_consistency_level(IntPtr prepared_statement, out int consistency_level);
+
+        [DllImport("csharp_wrapper", CallingConvention = CallingConvention.Cdecl)]
+        unsafe private static extern FFIMaybeException prepared_statement_set_consistency_level(IntPtr prepared_statement, ushort consistency_level, IntPtr constructors);
+
+        [DllImport("csharp_wrapper", CallingConvention = CallingConvention.Cdecl)]
+        unsafe private static extern FFIMaybeException prepared_statement_get_is_idempotent(IntPtr prepared_statement, out FFIBool isIdempotent);
+
+        [DllImport("csharp_wrapper", CallingConvention = CallingConvention.Cdecl)]
+        unsafe private static extern FFIMaybeException prepared_statement_set_is_idempotent(IntPtr prepared_statement, FFIBool isIdempotent);
+
+        private static readonly unsafe delegate* unmanaged[Cdecl]<IntPtr, ushort, FFIMaybeException> AddPkIndexPtr = &AddPkIndex;
+        [UnmanagedCallersOnly(CallConvs = new Type[] { typeof(CallConvCdecl) })]
+        private static unsafe FFIMaybeException AddPkIndex(
+            IntPtr pkIndexesListPtr,
+            ushort pkIndex)
+        {
+            try
+            {
+                var pkIndexesList = Unsafe.AsRef<List<int>>((void*)pkIndexesListPtr);
+                pkIndexesList.Add(pkIndex);
+            }
+            catch (Exception ex)
+            {
+                return FFIMaybeException.FromException(ex);
+            }
+
+            return FFIMaybeException.Ok();
+        }
 
         private nuint GetVariablesColumnSpecsCount()
         {
             nuint count = 0;
-            RunWithIncrement(handle => prepared_statement_get_variables_column_specs_count(handle, out count));
+            unsafe
+            {
+                RunWithIncrement(handle => prepared_statement_get_variables_column_specs_count(handle, out count));
+            }
             return count;
-        }
-
-        private void FillVariablesMetadata(IntPtr columnsPtr, IntPtr metadataSetter)
-        {
-            RunWithIncrement(handle => prepared_statement_fill_column_specs_metadata(handle, columnsPtr, metadataSetter));
         }
 
         unsafe static readonly delegate* unmanaged[Cdecl]<IntPtr, nuint, FFIString, FFIString, FFIString, byte, IntPtr, byte, FFIMaybeException> setColumnMetaPtr = &BridgedRowSet.SetColumnMeta;

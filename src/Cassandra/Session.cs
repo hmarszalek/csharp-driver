@@ -284,7 +284,14 @@ namespace Cassandra
                     }, TaskContinuationOptions.ExecuteSynchronously);
 
                 case BoundStatement bs:
-                    // Only support bound statements without values for now.
+                    // Extract consistency level and idempotence overrides from the BoundStatement, if provided.
+                    // If no consistency level override is provided, we pass false and an arbitrary consistency level (999).
+                    // When the Rust driver sees hasConsistencyLevel=false, it ignores the consistency level value.
+                    bool hasConsistencyLevel = bs.ConsistencyLevel.HasValue;
+                    ushort consistencyLevel = bs.ConsistencyLevel.HasValue ? (ushort)bs.ConsistencyLevel.Value : (ushort)999;
+
+                    // When the idempotence property is null, the driver will use the default value from QueryOptions.GetDefaultIdempotence().
+                    bool isIdempotent = bs.IsIdempotent ?? Configuration.QueryOptions.GetDefaultIdempotence();
 
                     // The managed PreparedStatement object (and the BoundStatement that
                     // references it) is rooted here by the local variable `bs`. Because there's an
@@ -297,14 +304,21 @@ namespace Cassandra
                     Task<RustBridge.ManuallyDestructible> boundTask;
                     if (queryValuesBound.Length == 0)
                     {
-                        boundTask = bridgedSession.QueryBound(queryPrepared);
+                        boundTask = bridgedSession.QueryBound(
+                            queryPrepared,
+                            hasConsistencyLevel,
+                            consistencyLevel,
+                            isIdempotent);
                     }
                     else
                     {
                         boundTask = bridgedSession.QueryBoundWithValues(
                             queryPrepared,
                             queryValuesBound,
-                            _serializerManager.GetCurrentSerializer()
+                            _serializerManager.GetCurrentSerializer(),
+                            hasConsistencyLevel,
+                            consistencyLevel,
+                            isIdempotent
                         );
                     }
 

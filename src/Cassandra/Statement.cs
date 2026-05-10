@@ -161,13 +161,6 @@ namespace Cassandra
             _outgoingPayload = builder;
         }
 
-        /// <inheritdoc />
-        internal Statement SetSkipMetadata(bool val)
-        {
-            SkipMetadata = val;
-            return this;
-        }
-
         /// <summary>
         ///  Bound values to the variables of this statement. This method provides a
         ///  convenience to bound all the variables of the <c>BoundStatement</c> in

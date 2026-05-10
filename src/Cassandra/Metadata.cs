@@ -59,8 +59,8 @@ namespace Cassandra
         // It either returns a valid Session or throws InvalidOperationException.
         private readonly Func<Session> _getActiveSessionOrThrow;
 
-        // Pointer to the last cluster state used to detect changes. This is a raw pointer 
-        // stored only for comparison purposes - it does not extend the lifetime of the ClusterState. 
+        // Pointer to the last cluster state used to detect changes. This is a raw pointer
+        // stored only for comparison purposes - it does not extend the lifetime of the ClusterState.
         // Volatile ensures visibility of updates across threads for the lock-free read in AllHosts().
         private volatile BridgedClusterState _lastClusterState = null;
 
@@ -219,7 +219,7 @@ namespace Cassandra
             }
             finally
             {
-                // Release the lock on the session created by calling _getActiveSessionOrThrow. 
+                // Release the lock on the session created by calling _getActiveSessionOrThrow.
                 session.DecreaseReferenceCount();
             }
         }
@@ -253,7 +253,7 @@ namespace Cassandra
             }
             finally
             {
-                // Release the lock on the session created by calling _getActiveSessionOrThrow. 
+                // Release the lock on the session created by calling _getActiveSessionOrThrow.
                 session.DecreaseReferenceCount();
             }
         }
@@ -274,7 +274,7 @@ namespace Cassandra
             }
             finally
             {
-                // Release the lock on the session created by calling _getActiveSessionOrThrow. 
+                // Release the lock on the session created by calling _getActiveSessionOrThrow.
                 session.DecreaseReferenceCount();
             }
         }
@@ -298,7 +298,7 @@ namespace Cassandra
             }
             finally
             {
-                // Release the lock on the session created by calling _getActiveSessionOrThrow. 
+                // Release the lock on the session created by calling _getActiveSessionOrThrow.
                 session.DecreaseReferenceCount();
             }
         }
@@ -321,7 +321,7 @@ namespace Cassandra
             }
             finally
             {
-                // Release the lock on the session created by calling _getActiveSessionOrThrow. 
+                // Release the lock on the session created by calling _getActiveSessionOrThrow.
                 session.DecreaseReferenceCount();
             }
         }

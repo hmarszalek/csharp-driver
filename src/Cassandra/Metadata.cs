@@ -147,9 +147,6 @@ namespace Cassandra
             throw new NotImplementedException();
         }
 
-        // for tests
-        internal KeyValuePair<string, KeyspaceMetadata>[] KeyspacesSnapshot => throw new NotImplementedException();
-
         /// <summary>
         /// Get the replicas for a given partition key and keyspace
         /// </summary>

@@ -171,8 +171,10 @@ namespace Cassandra
                 return;
             }
 
-            // FIXME: Actually perform shutdown.
-            // Remember to dequeue from Cluster's sessions list.
+            if (_cluster is Cluster cluster)
+            {
+                cluster.RemoveSession(this);
+            }
 
             // First, we shutdown the session in Rust - this acquires a write lock,
             // waits for all ongoing queries to complete, and blocks future queries.

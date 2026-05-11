@@ -267,6 +267,11 @@ namespace Cassandra
             return Metadata.RefreshSchemaAsync(keyspace, table);
         }
 
+        internal void RemoveSession(ISession session)
+        {
+            _connectedSessions.Remove(session);
+        }
+
         /// <inheritdoc />
         public void Shutdown(int timeoutMs = Timeout.Infinite)
         {

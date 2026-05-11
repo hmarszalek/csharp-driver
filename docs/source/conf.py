@@ -43,10 +43,10 @@ extensions = [
 source_suffix = [".rst", ".md"]
 
 # The master toctree document.
-master_doc = "index"
+master_doc = "contents"
 
 # General information about the project.
-project = "ScyllaDB C# driver"
+project = "ScyllaDB C# RS Driver"
 copyright = str(date.today().year) + " ScyllaDB"
 author = "ScyllaDB Project Contributors"
 
@@ -109,7 +109,7 @@ html_theme_options = {
     "hide_feedback_buttons": "false",
     "github_issues_repository": "scylladb/csharp-driver",
     "github_repository": "scylladb/csharp-driver",
-    "site_description": "ScyllaDB C# driver.",
+    "site_description": "ScyllaDB C# RS Driver.",
     "hide_version_dropdown": [],
     "zendesk_tag": "gq6ltsh3nfex3cnwfy4aj9",
     "versions_unstable": UNSTABLE_VERSIONS,

@@ -21,15 +21,6 @@ using Cassandra.Serialization;
 // ReSharper disable once CheckNamespace
 namespace Cassandra
 {
-    [Flags]
-    internal enum RowSetMetadataFlags
-    {
-        GlobalTablesSpec = 0x0001,
-        HasMorePages = 0x0002,
-        NoMetadata = 0x0004,
-        MetadataChanged = 0x0008
-    }
-
     /// <summary>
     /// Specifies a Cassandra data type of a field
     /// </summary>
@@ -271,13 +262,6 @@ namespace Cassandra
         /// </summary>
         public Dictionary<string, int> ColumnIndexes { get; protected set; }
 
-        internal byte[] PagingState { get; private set; }
-
-        /// <summary>
-        /// Gets the new_metadata_id.
-        /// </summary>
-        internal byte[] NewResultMetadataId { get; }
-
         /// <summary>
         /// Returns the keyspace as defined in the metadata response by global tables spec or the first column.
         /// </summary>
@@ -291,13 +275,6 @@ namespace Cassandra
         /// It returns null when partition keys were not parsed.
         /// </summary>
         internal int[] PartitionKeys { get; private set; }
-
-        internal int Flags { get; private set; }
-
-        /// <summary>
-        /// Whether the new_metadata_id was set.
-        /// </summary>
-        internal bool HasNewResultMetadataId() => NewResultMetadataId != null;
 
         /// Initializes a new instance of the RowSetMetadata class with the provided columns, partition keys,
         /// keyspace and table information, and builds the column index mapping.

@@ -50,7 +50,7 @@ namespace Cassandra
         /// <summary>
         ///  Returns the replication options for this keyspace.
         /// </summary>
-        /// 
+        ///
         /// <returns>a dictionary containing the keyspace replication strategy options.</returns>
         public IDictionary<string, int> Replication { get; private set; }
 
@@ -63,18 +63,6 @@ namespace Cassandra
         /// Returns the graph engine associated with this keyspace. Returns null if there isn't one.
         /// </summary>
         public string GraphEngine { get; }
-
-        internal KeyspaceMetadata(
-            Metadata parent,
-            string name,
-            bool durableWrites,
-            string strategyClass,
-            IDictionary<string, string> replicationOptions,
-            string graphEngine,
-            bool isVirtual = false)
-        {
-            throw new NotImplementedException("TODO: implement KeyspaceMetadata");
-        }
 
         // Constructor for creating a KeyspaceMetadata with only the name, used for bridging rest of metadata from Rust to C#.
         internal KeyspaceMetadata(
@@ -123,38 +111,6 @@ namespace Cassandra
         }
 
         /// <summary>
-        /// Removes table metadata forcing refresh the next time the table metadata is retrieved
-        /// </summary>
-        internal void ClearTableMetadata(string tableName)
-        {
-            throw new NotImplementedException("TODO: implement TableMetadata");
-        }
-
-        /// <summary>
-        /// Removes the view metadata forcing refresh the next time the view metadata is retrieved
-        /// </summary>
-        internal void ClearViewMetadata(string name)
-        {
-            throw new NotImplementedException("TODO: implement ViewMetadata");
-        }
-
-        /// <summary>
-        /// Removes function metadata forcing refresh the next time the function metadata is retrieved
-        /// </summary>
-        internal void ClearFunction(string name, string[] signature)
-        {
-            throw new NotImplementedException("TODO: implement FunctionMetadata");
-        }
-
-        /// <summary>
-        /// Removes aggregate metadata forcing refresh the next time the function metadata is retrieved
-        /// </summary>
-        internal void ClearAggregate(string name, string[] signature)
-        {
-            throw new NotImplementedException("TODO: implement AggregateMetadata");
-        }
-
-        /// <summary>
         ///  Returns metadata of all tables defined in this keyspace.
         /// </summary>
         /// <returns>an IEnumerable of TableMetadata for the tables defined in this
@@ -168,7 +124,7 @@ namespace Cassandra
         /// <summary>
         ///  Returns names of all tables defined in this keyspace.
         /// </summary>
-        /// 
+        ///
         /// <returns>a collection of all, defined in this
         ///  keyspace tables names.</returns>
         public ICollection<string> GetTablesNames()

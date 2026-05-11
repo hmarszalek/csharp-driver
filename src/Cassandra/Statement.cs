@@ -47,7 +47,7 @@ namespace Cassandra
 
         /// <summary>
         /// Gets the serial consistency level for this query.
-        /// </summary>        
+        /// </summary>
         public ConsistencyLevel SerialConsistencyLevel
         {
             get { return _serialConsistency; }
@@ -161,20 +161,13 @@ namespace Cassandra
             _outgoingPayload = builder;
         }
 
-        /// <inheritdoc />
-        internal Statement SetSkipMetadata(bool val)
-        {
-            SkipMetadata = val;
-            return this;
-        }
-
         /// <summary>
         ///  Bound values to the variables of this statement. This method provides a
         ///  convenience to bound all the variables of the <c>BoundStatement</c> in
         ///  one call.
         /// </summary>
         /// <param name="values"> the values to bind to the variables of the newly
-        ///  created BoundStatement. The first element of <c>values</c> will 
+        ///  created BoundStatement. The first element of <c>values</c> will
         ///  be bound to the first bind variable,
         ///  etc.. It is legal to provide less values than the statement has bound
         ///  variables. In that case, the remaining variable need to be bound before
